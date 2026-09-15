@@ -1,0 +1,30 @@
+{
+  "name": "smolstudio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SmolStudio commerce platform — Next.js + Fastify + GraphQL + SQL Server",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "concurrently -n web,api -c magenta,cyan \"npm:dev:web\" \"npm:dev:api\"",
+    "dev:web": "npm run dev --workspace apps/web",
+    "dev:api": "npm run dev --workspace apps/api",
+    "build": "npm run build --workspace apps/api && npm run build --workspace apps/web",
+    "test": "npm run test --workspace apps/api && npm run test --workspace apps/web",
+    "test:e2e": "npm run test:e2e --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace apps/api && npm run typecheck --workspace apps/web",
+    "db:up": "docker compose up -d sqlserver",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f sqlserver",
+    "db:migrate": "npm run db:migrate --workspace apps/api",
+    "db:seed": "npm run db:seed --workspace apps/api",
+    "db:reset": "npm run db:reset --workspace apps/api",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
