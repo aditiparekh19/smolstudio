@@ -58,11 +58,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
 
     try {
-      const headers = user
-        ? undefined
-        : token
-          ? { "x-cart-token": token }
-          : undefined;
+      const headers = token ? { "x-cart-token": token } : undefined;
 
       const result = await apiClient(headers).request<{ cart: Cart }>(
         cartQuery,
@@ -85,11 +81,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       subtotalInr: cart.subtotalInr,
       loading,
       add: async (variantId, quantity = 1) => {
-        const headers = user
-          ? undefined
-          : token
-            ? { "x-cart-token": token }
-            : undefined;
+        const headers = token ? { "x-cart-token": token } : undefined;
 
         const result = await apiClient(headers).request<{ addToCart: Cart }>(
           addToCartMutation,
@@ -99,11 +91,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCart(result.addToCart);
       },
       update: async (itemId, quantity) => {
-        const headers = user
-          ? undefined
-          : token
-            ? { "x-cart-token": token }
-            : undefined;
+        const headers = token ? { "x-cart-token": token } : undefined;
 
         const result = await apiClient(headers).request<{
           updateCartItem: Cart;
@@ -112,11 +100,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCart(result.updateCartItem);
       },
       remove: async (itemId) => {
-        const headers = user
-          ? undefined
-          : token
-            ? { "x-cart-token": token }
-            : undefined;
+        const headers = token ? { "x-cart-token": token } : undefined;
 
         const result = await apiClient(headers).request<{
           removeCartItem: Cart;

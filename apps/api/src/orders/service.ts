@@ -127,6 +127,188 @@ export async function releaseExpiredReservations() {
   }
 }
 
+async function getTableColumns(pool: sql.ConnectionPool, tableName: string) {
+  const result = await pool
+    .request()
+    .input("tableName", sql.NVarChar(128), tableName)
+    .query<{ columnName: string }>(
+      `SELECT COLUMN_NAME AS columnName
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @tableName`,
+    );
+
+  return new Set(
+    result.recordset.map((row) => String(row.columnName).toLowerCase()),
+  );
+}
+
+async function getTableExists(pool: sql.ConnectionPool, tableName: string) {
+  const result = await pool
+    .request()
+    .input("tableName", sql.NVarChar(128), tableName)
+    .query<{ exists: number }>(
+      `SELECT CASE WHEN OBJECT_ID(N'dbo.' + @tableName, N'U') IS NULL THEN 0 ELSE 1 END AS [exists]`,
+    );
+
+  return Number(result.recordset[0]?.exists ?? 0) === 1;
+}
+
+async function getCouponCategoryIds(
+  pool: sql.ConnectionPool,
+  couponId: string,
+) {
+  const ids = new Set<string>();
+
+  // Preferred many-to-many representation. Support both common table names.
+  for (const relationTable of ["coupon_categories", "coupon_category"]) {
+    if (!(await getTableExists(pool, relationTable))) continue;
+
+    const columns = await getTableColumns(pool, relationTable);
+    if (!columns.has("coupon_id") || !columns.has("category_id")) continue;
+
+    const result = await pool
+      .request()
+      .input("couponId", couponId)
+      .query<any>(
+        `SELECT DISTINCT CAST(category_id AS nvarchar(100)) AS categoryId
+         FROM dbo.${relationTable}
+         WHERE coupon_id = @couponId`,
+      );
+
+    for (const row of result.recordset) {
+      if (row.categoryId != null) ids.add(String(row.categoryId));
+    }
+
+    return ids;
+  }
+
+  // Single-category representation: coupons.category_id.
+  const couponColumns = await getTableColumns(pool, "coupons");
+  if (couponColumns.has("category_id")) {
+    const result = await pool
+      .request()
+      .input("couponId", couponId)
+      .query<any>(
+        `SELECT TOP 1 CAST(category_id AS nvarchar(100)) AS categoryId
+         FROM dbo.coupons
+         WHERE id = @couponId`,
+      );
+
+    const categoryId = result.recordset[0]?.categoryId;
+    if (categoryId != null) ids.add(String(categoryId));
+  }
+
+  return ids;
+}
+
+async function getEligibleSubtotal(
+  pool: sql.ConnectionPool,
+  customerId: string,
+  couponCategoryIds: Set<string>,
+  categoryRestrictionExists: boolean,
+) {
+  // No category restriction means the complete cart is eligible.
+  if (!categoryRestrictionExists) {
+    const result = await pool
+      .request()
+      .input("customerId", customerId)
+      .query<any>(
+        `SELECT
+           ci.quantity,
+           p.price_inr priceInr
+         FROM carts c
+         INNER JOIN cart_items ci ON ci.cart_id = c.id
+         INNER JOIN product_variants v ON v.id = ci.variant_id
+         INNER JOIN products p ON p.id = v.product_id
+         WHERE c.customer_id = @customerId`,
+      );
+
+    return result.recordset.reduce(
+      (sum: number, item: any) =>
+        sum + Number(item.priceInr) * Number(item.quantity),
+      0,
+    );
+  }
+
+  if (!couponCategoryIds.size) {
+    return 0;
+  }
+
+  const productColumns = await getTableColumns(pool, "products");
+
+  // products.category_id representation.
+  if (productColumns.has("category_id")) {
+    const categoryValues = Array.from(couponCategoryIds);
+    if (!categoryValues.length) return 0;
+
+    const request = pool.request().input("customerId", customerId);
+    const placeholders = categoryValues.map((id, index) => {
+      const name = `categoryId${index}`;
+      request.input(name, id);
+      return `@${name}`;
+    });
+
+    const result = await request.query<any>(
+      `SELECT
+         ci.quantity,
+         p.price_inr priceInr
+       FROM carts c
+       INNER JOIN cart_items ci ON ci.cart_id = c.id
+       INNER JOIN product_variants v ON v.id = ci.variant_id
+       INNER JOIN products p ON p.id = v.product_id
+       WHERE c.customer_id = @customerId
+         AND CAST(p.category_id AS nvarchar(100)) IN (${placeholders.join(",")})`,
+    );
+
+    return result.recordset.reduce(
+      (sum: number, item: any) =>
+        sum + Number(item.priceInr) * Number(item.quantity),
+      0,
+    );
+  }
+
+  // product_categories(product_id, category_id) representation.
+  if (await getTableExists(pool, "product_categories")) {
+    const pcColumns = await getTableColumns(pool, "product_categories");
+    if (pcColumns.has("product_id") && pcColumns.has("category_id")) {
+      const categoryValues = Array.from(couponCategoryIds);
+      const request = pool.request().input("customerId", customerId);
+      const placeholders = categoryValues.map((id, index) => {
+        const name = `categoryId${index}`;
+        request.input(name, id);
+        return `@${name}`;
+      });
+
+      const result = await request.query<any>(
+        `SELECT
+           ci.quantity,
+           p.price_inr priceInr
+         FROM carts c
+         INNER JOIN cart_items ci ON ci.cart_id = c.id
+         INNER JOIN product_variants v ON v.id = ci.variant_id
+         INNER JOIN products p ON p.id = v.product_id
+         WHERE c.customer_id = @customerId
+           AND EXISTS (
+             SELECT 1
+             FROM product_categories pc
+             WHERE pc.product_id = p.id
+               AND CAST(pc.category_id AS nvarchar(100)) IN (${placeholders.join(",")})
+           )`,
+      );
+
+      return result.recordset.reduce(
+        (sum: number, item: any) =>
+          sum + Number(item.priceInr) * Number(item.quantity),
+        0,
+      );
+    }
+  }
+
+  // If a category restriction exists but the product/category schema cannot be
+  // resolved, fail closed rather than accidentally discounting unrelated items.
+  return 0;
+}
+
 async function validateCoupon(
   couponCode: string | null | undefined,
   customerId: string | null | undefined,
@@ -138,45 +320,247 @@ async function validateCoupon(
     return { code: null, discountInr: 0 };
   }
 
-  if (code !== "WELCOME5") {
-    throw new Error("Invalid coupon code.");
-  }
-
   if (!customerId) {
-    throw new Error("WELCOME5 is available for registered customers only.");
+    throw new Error("Please sign in to apply a coupon.");
   }
 
   const pool = await getDb();
+
+  // Coupon/database diagnostics. This confirms exactly which SQL Server/database
+  // the running Node API is using when a coupon is checked.
+  if (code !== "WELCOME5") {
+    const dbContext = await pool.request().query<any>(`
+      SELECT
+        DB_NAME() AS dbName,
+        @@SERVERNAME AS serverName
+    `);
+
+    const debugCoupon = await pool
+      .request()
+      .input("debugCode", sql.NVarChar(100), code)
+      .query<any>(`
+        SELECT TOP 1
+          id,
+          code,
+          discount_type AS discountType,
+          discount_value AS discountValue,
+          min_order_inr AS minOrderInr,
+          max_discount_inr AS maxDiscountInr,
+          max_redemptions AS maxRedemptions,
+          redeemed_count AS redeemedCount,
+          starts_at AS startsAt,
+          ends_at AS endsAt,
+          is_active AS isActive
+        FROM dbo.coupons
+        WHERE UPPER(LTRIM(RTRIM(code))) = @debugCode
+      `);
+
+    console.log("[COUPON DEBUG]", {
+      requestedCode: code,
+      database: dbContext.recordset[0]?.dbName,
+      server: dbContext.recordset[0]?.serverName,
+      matches: debugCoupon.recordset,
+    });
+  }
+
+  // Preserve the original WELCOME5 behavior exactly: registered customer,
+  // first PAID order only, and 5% off the complete cart.
+  if (code === "WELCOME5") {
+    const result = await pool
+      .request()
+      .input("customerId", customerId)
+      .query<any>(
+        `SELECT COUNT(*) AS orderCount
+         FROM dbo.orders
+         WHERE customer_id = @customerId
+           AND status = 'PAID'`,
+      );
+
+    const orderCount = Number(result.recordset[0]?.orderCount ?? 0);
+
+    if (orderCount > 0) {
+      throw new Error("WELCOME5 is available only on your first order.");
+    }
+
+    return {
+      code: "WELCOME5",
+      discountInr: Math.round(subtotal * 0.05 * 100) / 100,
+    };
+  }
+
+  const couponColumns = await getTableColumns(pool, "coupons");
+  const requiredColumns = [
+    "code",
+    "discount_type",
+    "discount_value",
+    "is_active",
+  ];
+
+  for (const column of requiredColumns) {
+    if (!couponColumns.has(column)) {
+      throw new Error(
+        `Coupon configuration is missing the ${column} field.`,
+      );
+    }
+  }
+
+  const minOrderColumn = couponColumns.has("min_order_inr")
+    ? "min_order_inr"
+    : couponColumns.has("min_order_value")
+      ? "min_order_value"
+      : null;
+
+  const maxDiscountColumn = couponColumns.has("max_discount_inr")
+    ? "max_discount_inr"
+    : couponColumns.has("max_discount")
+      ? "max_discount"
+      : null;
+
+  const minOrderSelect = minOrderColumn
+    ? `[${minOrderColumn}]`
+    : "NULL";
+
+  const maxDiscountSelect = maxDiscountColumn
+    ? `[${maxDiscountColumn}]`
+    : "NULL";
+
   const result = await pool
     .request()
-    .input("customerId", customerId)
+    .input("code", sql.NVarChar(50), code)
     .query<any>(
-      `SELECT COUNT(*) AS orderCount
-     FROM dbo.orders
-     WHERE customer_id = @customerId
-       AND status = 'PAID'`,
+      `SELECT TOP 1
+         id,
+         code,
+         discount_type discountType,
+         discount_value discountValue,
+         ${minOrderSelect} minOrderInr,
+         ${maxDiscountSelect} maxDiscountInr,
+         ${couponColumns.has("max_redemptions") ? "max_redemptions" : "NULL"} maxRedemptions,
+         ${couponColumns.has("redeemed_count") ? "redeemed_count" : "0"} redeemedCount,
+         ${couponColumns.has("starts_at") ? "starts_at" : "NULL"} startsAt,
+         ${couponColumns.has("ends_at") ? "ends_at" : "NULL"} endsAt,
+         is_active isActive
+       FROM dbo.coupons
+       WHERE UPPER(LTRIM(RTRIM(code))) = @code`,
     );
 
-  const orderCount = Number(result.recordset[0]?.orderCount ?? 0);
+  const coupon = result.recordset[0];
 
-  if (orderCount > 0) {
-    throw new Error("WELCOME5 is available only on your first order.");
+  if (!coupon) {
+    throw new Error("Invalid coupon code.");
+  }
+
+  if (!Boolean(coupon.isActive)) {
+    throw new Error("This coupon is inactive.");
+  }
+
+  const now = new Date();
+
+  if (coupon.startsAt && now < new Date(coupon.startsAt)) {
+    throw new Error("This coupon is not active yet.");
+  }
+
+  if (coupon.endsAt && now > new Date(coupon.endsAt)) {
+    throw new Error("This coupon has expired.");
+  }
+
+  const maxRedemptions = coupon.maxRedemptions;
+  const redeemedCount = Number(coupon.redeemedCount ?? 0);
+
+  if (
+    maxRedemptions !== null &&
+    maxRedemptions !== undefined &&
+    Number(maxRedemptions) > 0 &&
+    redeemedCount >= Number(maxRedemptions)
+  ) {
+    throw new Error("This coupon has reached its usage limit.");
+  }
+
+  const couponCategoryIds = await getCouponCategoryIds(
+    pool,
+    String(coupon.id),
+  );
+  const categoryRestrictionExists = couponCategoryIds.size > 0;
+
+  const eligibleSubtotal = await getEligibleSubtotal(
+    pool,
+    customerId,
+    couponCategoryIds,
+    categoryRestrictionExists,
+  );
+
+  if (categoryRestrictionExists && eligibleSubtotal <= 0) {
+    throw new Error("This coupon does not apply to the products in your bag.");
+  }
+
+  const minOrderValue = Number(coupon.minOrderInr ?? 0);
+
+  // The minimum order rule is evaluated against the eligible amount when the
+  // coupon is category-specific; otherwise it uses the complete cart subtotal.
+  const minimumBase = categoryRestrictionExists
+    ? eligibleSubtotal
+    : subtotal;
+
+  if (minimumBase < minOrderValue) {
+    throw new Error(
+      `Minimum order value for this coupon is ₹${minOrderValue.toLocaleString(
+        "en-IN",
+      )}.`,
+    );
+  }
+
+  let discountInr = 0;
+  const discountType = String(coupon.discountType ?? "").toUpperCase();
+  const discountValue = Number(coupon.discountValue ?? 0);
+
+  if (!Number.isFinite(discountValue) || discountValue < 0) {
+    throw new Error("This coupon has an invalid discount value.");
+  }
+
+  if (discountType === "PERCENT") {
+    if (discountValue > 100) {
+      throw new Error("Coupon percentage cannot exceed 100%.");
+    }
+
+    discountInr =
+      Math.round(
+        eligibleSubtotal * (discountValue / 100) * 100,
+      ) / 100;
+  } else if (discountType === "FIXED") {
+    discountInr = Math.min(discountValue, eligibleSubtotal);
+  } else {
+    throw new Error("This coupon has an invalid discount type.");
+  }
+
+  const maxDiscountInr =
+    coupon.maxDiscountInr == null
+      ? null
+      : Number(coupon.maxDiscountInr);
+
+  if (
+    maxDiscountInr !== null &&
+    Number.isFinite(maxDiscountInr) &&
+    maxDiscountInr >= 0
+  ) {
+    discountInr = Math.min(discountInr, maxDiscountInr);
   }
 
   return {
-    code: "WELCOME5",
-    discountInr: Math.round(subtotal * 0.05 * 100) / 100,
+    code: String(coupon.code).trim().toUpperCase(),
+    discountInr,
   };
 }
 
 function calculateTotals(subtotal: number, discount: number): CheckoutTotals {
   const taxable = Math.max(0, subtotal - discount);
-  const shipping =
-    env.FREE_SHIPPING_THRESHOLD_INR > 0 &&
-    taxable >= env.FREE_SHIPPING_THRESHOLD_INR
-      ? 0
-      : env.SHIPPING_FLAT_INR;
+
+  // Shipping rule:
+  // Final amount <= ₹499  → ₹80 shipping
+  // Final amount >= ₹500  → FREE shipping
+  const shipping = taxable <= 499 ? 80 : 0;
+
   const tax = Math.round((taxable * env.GST_RATE_PERCENT) / 100);
+
   return {
     subtotalInr: subtotal,
     shippingInr: shipping,
@@ -466,38 +850,60 @@ async function finalizePaidOrder(orderId: string, paymentId: string) {
   try {
     if (row.couponCode && row.couponCode.toUpperCase() !== "WELCOME5") {
       const coupon = await new sql.Request(tx)
-        .input("code", row.couponCode)
+        .input("code", sql.NVarChar(100), row.couponCode.trim().toUpperCase())
         .query<any>(
-          `SELECT TOP 1 id,max_redemptions maxRedemptions,redeemed_count redeemedCount FROM coupons WHERE UPPER(code)=UPPER(@code) AND is_active=1`,
+          `SELECT TOP 1
+             id,
+             max_redemptions maxRedemptions,
+             redeemed_count redeemedCount
+           FROM dbo.coupons WITH (UPDLOCK, HOLDLOCK)
+           WHERE UPPER(code)=@code
+             AND is_active=1`,
         );
-      if (coupon.recordset[0]) {
-        const c = coupon.recordset[0];
-        const update = await new sql.Request(tx)
-          .input("id", c.id)
-          .input("max", c.maxRedemptions)
-          .query(
-            `UPDATE coupons SET redeemed_count=redeemed_count+1 WHERE id=@id AND (@max IS NULL OR redeemed_count<@max)`,
-          );
-        if (!update.rowsAffected[0])
-          throw new Error(
-            "Coupon redemption limit was reached while payment was completing.",
-          );
-        const discount = await new sql.Request(tx)
-          .input("orderId", orderId)
-          .query<any>(
-            `SELECT discount_inr discount FROM orders WHERE id=@orderId`,
-          );
-        await new sql.Request(tx)
-          .input("id", randomUUID())
-          .input("couponId", c.id)
-          .input("customerId", row.customerId)
-          .input("orderId", orderId)
-          .input("discount", discount.recordset[0]?.discount ?? 0)
-          .query(
-            `INSERT INTO coupon_redemptions(id,coupon_id,customer_id,order_id,discount_inr) VALUES(@id,@couponId,@customerId,@orderId,@discount)`,
-          );
+
+      if (!coupon.recordset[0]) {
+        throw new Error(
+          "Coupon could not be found while completing the order.",
+        );
       }
+
+      const c = coupon.recordset[0];
+      const update = await new sql.Request(tx)
+        .input("id", c.id)
+        .input("max", c.maxRedemptions)
+        .query(
+          `UPDATE dbo.coupons
+           SET redeemed_count=redeemed_count+1
+           WHERE id=@id
+             AND (@max IS NULL OR @max <= 0 OR redeemed_count<@max)`,
+        );
+
+      if (!update.rowsAffected[0]) {
+        throw new Error(
+          "Coupon redemption limit was reached while payment was completing.",
+        );
+      }
+
+      const discount = await new sql.Request(tx)
+        .input("orderId", orderId)
+        .query<any>(
+          `SELECT discount_inr discount FROM dbo.orders WHERE id=@orderId`,
+        );
+
+      await new sql.Request(tx)
+        .input("id", randomUUID())
+        .input("couponId", c.id)
+        .input("customerId", row.customerId)
+        .input("orderId", orderId)
+        .input("discount", discount.recordset[0]?.discount ?? 0)
+        .query(
+          `INSERT INTO dbo.coupon_redemptions
+             (id,coupon_id,customer_id,order_id,discount_inr)
+           VALUES
+             (@id,@couponId,@customerId,@orderId,@discount)`,
+        );
     }
+
     await new sql.Request(tx)
       .input("id", orderId)
       .input("paymentId", paymentId)

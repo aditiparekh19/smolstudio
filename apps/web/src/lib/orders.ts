@@ -8,7 +8,6 @@ export const checkoutTotalsQuery = gql`
       discountInr
       taxInr
       totalInr
-      couponCode
     }
   }
 `;

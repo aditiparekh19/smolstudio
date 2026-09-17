@@ -464,98 +464,146 @@ export default function ProductEditor({ id }: { id?: string }) {
             )}
           </div>
           <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
-            <h2 className="font-serif text-2xl text-[#5e473c]">
-              Variants & inventory
-            </h2>
-            <div className="mt-5 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[#eadfd5] text-left text-xs uppercase tracking-wider text-[#8b7a70]">
-                    <th className="pb-3">SKU</th>
-                    <th>Size</th>
-                    <th>Color</th>
-                    <th>Stock</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {p.variants.map((v) => (
-                    <tr key={v.id} className="border-b border-[#f0e8e2]">
-                      <td className="py-3">{v.sku}</td>
-                      <td>{v.size}</td>
-                      <td>{v.color}</td>
-                      <td>{v.stock}</td>
-                      <td className="text-right">
-                        <div className="flex justify-end gap-3">
-                        <button
-                          onClick={() => setNewVariant({ id: v.id, productId: p.id, sku: v.sku, size: v.size, color: v.color, stock: v.stock })}
-                          className="text-[#5e473c]"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => removeVariant(v)}
-                          className="text-red-700"
-                        >
-                          Delete
-                        </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {p.id && (
-              <div className="mt-5 grid gap-3 sm:grid-cols-4">
-                <input
-                  placeholder="Variant SKU"
-                  value={newVariant.sku}
-                  onChange={(e) =>
-                    setNewVariant({ ...newVariant, sku: e.target.value })
+  <h2 className="font-serif text-2xl text-[#5e473c]">
+    Variants & inventory
+  </h2>
+
+  <div className="mt-5 overflow-x-auto">
+    <table className="w-full table-fixed text-sm">
+      <colgroup>
+        <col className="w-[25%]" />
+        <col className="w-[20%]" />
+        <col className="w-[25%]" />
+        <col className="w-[15%]" />
+        <col className="w-[15%]" />
+      </colgroup>
+
+      <thead>
+        <tr className="border-b border-[#eadfd5] text-left text-xs uppercase tracking-wider text-[#8b7a70]">
+          <th className="pb-3">SKU</th>
+          <th className="pb-3">Size</th>
+          <th className="pb-3">Color</th>
+          <th className="pb-3">Stock</th>
+          <th className="pb-3"></th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {p.variants.map((v) => (
+          <tr key={v.id} className="border-b border-[#f0e8e2]">
+            <td className="py-3">{v.sku}</td>
+            <td className="py-3">{v.size}</td>
+            <td className="py-3">{v.color}</td>
+            <td className="py-3">{v.stock}</td>
+            <td className="py-3">
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() =>
+                    setNewVariant({
+                      id: v.id,
+                      productId: p.id,
+                      sku: v.sku,
+                      size: v.size,
+                      color: v.color,
+                      stock: v.stock,
+                    })
                   }
-                  className="rounded-xl border border-[#d9cbc0] px-3 py-2.5"
-                />
-                <input
-                  placeholder="Size"
-                  value={newVariant.size}
-                  onChange={(e) =>
-                    setNewVariant({ ...newVariant, size: e.target.value })
-                  }
-                  className="rounded-xl border border-[#d9cbc0] px-3 py-2.5"
-                />
-                <input
-                  placeholder="Color"
-                  value={newVariant.color}
-                  onChange={(e) =>
-                    setNewVariant({ ...newVariant, color: e.target.value })
-                  }
-                  className="rounded-xl border border-[#d9cbc0] px-3 py-2.5"
-                />
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Stock"
-                    value={newVariant.stock}
-                    onChange={(e) =>
-                      setNewVariant({
-                        ...newVariant,
-                        stock: Number(e.target.value),
-                      })
-                    }
-                    className="min-w-0 flex-1 rounded-xl border border-[#d9cbc0] px-3 py-2.5"
-                  />
-                  <button
-                    onClick={saveNewVariant}
-                    className="rounded-xl bg-[#5e473c] px-4 py-2 text-sm text-white"
-                  >
-                    {newVariant.id ? "Update" : "Add"}
-                  </button>
-                </div>
+                  className="text-[#5e473c]"
+                >
+                  Edit
+                </button>
+
+                <button
+                  onClick={() => removeVariant(v)}
+                  className="text-red-700"
+                >
+                  Delete
+                </button>
               </div>
-            )}
-          </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  {p.id && (
+    <div className="mt-3 grid grid-cols-[25%_20%_25%_15%_15%] gap-0">
+      {/* SKU */}
+      <div className="pr-2">
+        <input
+          placeholder="Variant SKU"
+          value={newVariant.sku}
+          onChange={(e) =>
+            setNewVariant({
+              ...newVariant,
+              sku: e.target.value,
+            })
+          }
+          className="h-10 w-full rounded-xl border border-[#d9cbc0] px-3 text-sm"
+        />
+      </div>
+
+      {/* Size */}
+      <div className="px-1">
+        <input
+          placeholder="Size"
+          value={newVariant.size}
+          onChange={(e) =>
+            setNewVariant({
+              ...newVariant,
+              size: e.target.value,
+            })
+          }
+          className="h-10 w-full rounded-xl border border-[#d9cbc0] px-3 text-sm"
+        />
+      </div>
+
+      {/* Color */}
+      <div className="px-1">
+        <input
+          placeholder="Color"
+          value={newVariant.color}
+          onChange={(e) =>
+            setNewVariant({
+              ...newVariant,
+              color: e.target.value,
+            })
+          }
+          className="h-10 w-full rounded-xl border border-[#d9cbc0] px-3 text-sm"
+        />
+      </div>
+
+      {/* Stock */}
+      <div className="px-1">
+        <input
+          type="number"
+          min="0"
+          placeholder="Stock"
+          value={newVariant.stock}
+          onChange={(e) =>
+            setNewVariant({
+              ...newVariant,
+              stock: Number(e.target.value),
+            })
+          }
+          className="h-10 w-full rounded-xl border border-[#d9cbc0] px-3 text-sm"
+        />
+      </div>
+
+      {/* Add / Update */}
+      <div className="pl-1">
+        <button
+          onClick={saveNewVariant}
+          className="h-10 w-full rounded-xl bg-[#5e473c] px-4 text-sm text-white"
+        >
+          {newVariant.id ? "Update" : "Add"}
+        </button>
+      </div>
+    </div>
+  )}
+</div>
+
         </section>
         <aside className="h-fit rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6">
           <p className="text-xs uppercase tracking-[0.18em] text-[#8b7a70]">

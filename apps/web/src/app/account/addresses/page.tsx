@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { apiClient } from '../../../lib/graphql';
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { apiClient } from "../../../lib/graphql";
 import {
   deleteAddressMutation,
   myAddressesQuery,
   saveAddressMutation,
-} from '../../../lib/orders';
-import { useAuth } from '../../../components/AuthProvider';
+} from "../../../lib/orders";
+import { useAuth } from "../../../components/AuthProvider";
 
 type Address = {
   id?: string;
@@ -24,41 +24,46 @@ type Address = {
 };
 
 const blank: Address = {
-  label: '',
-  recipientName: '',
-  line1: '',
-  line2: '',
-  city: '',
-  state: '',
-  postalCode: '',
-  countryCode: 'IN',
-  phone: '',
+  label: "",
+  recipientName: "",
+  line1: "",
+  line2: "",
+  city: "",
+  state: "",
+  postalCode: "",
+  countryCode: "IN",
+  phone: "",
 };
 
-const fields: Array<{ key: keyof Address; label: string; required?: boolean; type?: string }> = [
-  { key: 'label', label: 'Label' },
-  { key: 'recipientName', label: 'Full name', required: true },
-  { key: 'line1', label: 'Address line 1', required: true },
-  { key: 'line2', label: 'Address line 2' },
-  { key: 'city', label: 'City', required: true },
-  { key: 'state', label: 'State', required: true },
-  { key: 'postalCode', label: 'PIN code', required: true },
-  { key: 'countryCode', label: 'Country' },
-  { key: 'phone', label: 'Phone number', required: true, type: 'tel' },
+const fields: Array<{
+  key: keyof Address;
+  label: string;
+  required?: boolean;
+  type?: string;
+}> = [
+  { key: "label", label: "Label" },
+  { key: "recipientName", label: "Full name", required: true },
+  { key: "line1", label: "Address line 1", required: true },
+  { key: "line2", label: "Address line 2" },
+  { key: "city", label: "City", required: true },
+  { key: "state", label: "State", required: true },
+  { key: "postalCode", label: "PIN code", required: true },
+  { key: "countryCode", label: "Country" },
+  { key: "phone", label: "Phone number", required: true, type: "tel" },
 ];
 
 export default function Addresses() {
   const { user, loading } = useAuth();
   const [rows, setRows] = useState<Address[]>([]);
   const [a, setA] = useState<Address>(blank);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function load() {
     try {
       setRows((await apiClient().request<any>(myAddressesQuery)).myAddresses);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to load addresses.');
+      setError(e instanceof Error ? e.message : "Unable to load addresses.");
     }
   }
 
@@ -79,57 +84,57 @@ export default function Addresses() {
     );
 
   function validatePhone(phone: string) {
-    const digits = phone.replace(/\D/g, '');
+    const digits = phone.replace(/\D/g, "");
     return /^(?:91)?[6-9]\d{9}$/.test(digits);
   }
 
   function updateField(key: keyof Address, value: string) {
     setA((current) => ({ ...current, [key]: value }));
-    if (error) setError('');
+    if (error) setError("");
   }
 
   function editAddress(address: Address) {
-    setError('');
+    setError("");
     setA({
       ...blank,
       ...address,
       id: address.id,
     });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function cancelEdit() {
     setA(blank);
-    setError('');
+    setError("");
   }
 
   async function save() {
-    setError('');
+    setError("");
 
     const requiredFields: Array<[keyof Address, string]> = [
-      ['recipientName', 'Full name'],
-      ['line1', 'Address line 1'],
-      ['city', 'City'],
-      ['state', 'State'],
-      ['postalCode', 'PIN code'],
-      ['phone', 'Phone number'],
+      ["recipientName", "Full name"],
+      ["line1", "Address line 1"],
+      ["city", "City"],
+      ["state", "State"],
+      ["postalCode", "PIN code"],
+      ["phone", "Phone number"],
     ];
 
     for (const [key, label] of requiredFields) {
-      if (!String(a[key] ?? '').trim()) {
+      if (!String(a[key] ?? "").trim()) {
         setError(`${label} is required.`);
         return;
       }
     }
 
-    const pin = a.postalCode.replace(/\s/g, '');
+    const pin = a.postalCode.replace(/\s/g, "");
     if (!/^\d{6}$/.test(pin)) {
-      setError('Enter a valid 6-digit Indian PIN code.');
+      setError("Enter a valid 6-digit Indian PIN code.");
       return;
     }
 
     if (!validatePhone(a.phone)) {
-      setError('Enter a valid 10-digit Indian mobile number.');
+      setError("Enter a valid 10-digit Indian mobile number.");
       return;
     }
 
@@ -137,20 +142,30 @@ export default function Addresses() {
     try {
       await apiClient().request(saveAddressMutation, {
         ...a,
-        label: a.label.trim() || undefined,
-        recipientName: a.recipientName.trim(),
-        line1: a.line1.trim(),
-        line2: a.line2.trim() || undefined,
-        city: a.city.trim(),
-        state: a.state.trim(),
+
+        label: (a.label ?? "").trim() || undefined,
+
+        recipientName: (a.recipientName ?? "").trim(),
+
+        line1: (a.line1 ?? "").trim(),
+
+        line2: (a.line2 ?? "").trim() || undefined,
+
+        city: (a.city ?? "").trim(),
+
+        state: (a.state ?? "").trim(),
+
         postalCode: pin,
-        countryCode: a.countryCode.trim().toUpperCase() || 'IN',
-        phone: a.phone.replace(/\D/g, '').replace(/^91/, ''),
+
+        countryCode: (a.countryCode ?? "").trim().toUpperCase() || "IN",
+
+        phone: (a.phone ?? "").replace(/\D/g, "").replace(/^91/, ""),
       });
+
       setA(blank);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to save address.');
+      setError(e instanceof Error ? e.message : "Unable to save address.");
     } finally {
       setSaving(false);
     }
@@ -161,7 +176,9 @@ export default function Addresses() {
       <Link href="/account" className="text-sm text-[#8b7a70]">
         ← Account
       </Link>
-      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Saved addresses</h1>
+      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">
+        Saved addresses
+      </h1>
 
       {error && (
         <p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">
@@ -172,7 +189,7 @@ export default function Addresses() {
       <div className="mt-8 rounded-[2rem] border border-[#eadfd5] bg-white p-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="font-medium text-[#5e473c]">
-            {a.id ? 'Edit address' : 'Add new address'}
+            {a.id ? "Edit address" : "Add new address"}
           </h2>
           {a.id && (
             <button
@@ -189,15 +206,26 @@ export default function Addresses() {
           {fields.map((field) => (
             <label key={field.key} className="block">
               <span className="mb-1 ml-1 block text-xs text-[#8b7a70]">
-                {field.label}{field.required ? ' *' : ''}
+                {field.label}
+                {field.required ? " *" : ""}
               </span>
               <input
-                type={field.type ?? 'text'}
-                value={String(a[field.key] ?? '')}
+                type={field.type ?? "text"}
+                value={String(a[field.key] ?? "")}
                 onChange={(e) => updateField(field.key, e.target.value)}
                 placeholder={field.label}
-                inputMode={field.key === 'phone' || field.key === 'postalCode' ? 'numeric' : undefined}
-                maxLength={field.key === 'phone' ? 13 : field.key === 'postalCode' ? 6 : undefined}
+                inputMode={
+                  field.key === "phone" || field.key === "postalCode"
+                    ? "numeric"
+                    : undefined
+                }
+                maxLength={
+                  field.key === "phone"
+                    ? 13
+                    : field.key === "postalCode"
+                      ? 6
+                      : undefined
+                }
                 className="w-full rounded-xl border border-[#d9cbc0] px-4 py-3 outline-none focus:border-[#8b7a70]"
               />
             </label>
@@ -210,7 +238,7 @@ export default function Addresses() {
           disabled={saving}
           className="mt-4 rounded-full bg-[#5e473c] px-5 py-3 text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {saving ? 'Saving…' : a.id ? 'Update address' : 'Save address'}
+          {saving ? "Saving…" : a.id ? "Update address" : "Save address"}
         </button>
       </div>
 
@@ -225,11 +253,16 @@ export default function Addresses() {
               {x.recipientName}
               <br />
               {x.line1}
-              {x.line2 && <><br />{x.line2}</>}
+              {x.line2 && (
+                <>
+                  <br />
+                  {x.line2}
+                </>
+              )}
               <br />
               {x.city}, {x.state} {x.postalCode}
               <br />
-              {x.phone || ''}
+              {x.phone || ""}
             </p>
             <div className="mt-4 flex gap-2">
               <button
@@ -243,13 +276,22 @@ export default function Addresses() {
                 type="button"
                 onClick={async () => {
                   if (!x.id) return;
-                  if (!confirm(`Delete ${x.label || x.recipientName}'s address?`)) return;
+                  if (
+                    !confirm(`Delete ${x.label || x.recipientName}'s address?`)
+                  )
+                    return;
                   try {
-                    await apiClient().request(deleteAddressMutation, { id: x.id });
+                    await apiClient().request(deleteAddressMutation, {
+                      id: x.id,
+                    });
                     if (a.id === x.id) setA(blank);
                     await load();
                   } catch (e) {
-                    setError(e instanceof Error ? e.message : 'Unable to delete address.');
+                    setError(
+                      e instanceof Error
+                        ? e.message
+                        : "Unable to delete address.",
+                    );
                   }
                 }}
                 className="rounded-full border border-red-200 px-4 py-2 text-sm text-red-700"

@@ -2,7 +2,7 @@ FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 COPY apps/api/package*.json apps/api/
-RUN npm install --omit=dev
+RUN npm install
 
 FROM node:24-alpine AS build
 WORKDIR /app

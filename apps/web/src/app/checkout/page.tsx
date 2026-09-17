@@ -34,7 +34,7 @@ type Address = {
 
 export default function CheckoutPage() {
   const { user } = useAuth();
-  const { items } = useCart();
+  const { items, refresh: refreshCart } = useCart();
   const router = useRouter();
 
   const [address, setAddress] = useState<Address>({
@@ -81,10 +81,29 @@ export default function CheckoutPage() {
   );
 
   /*
+   * ============================================================
+   * BROWSER DEBUG — CHECKOUT STATE
+   * ============================================================
+   */
+  useEffect(() => {
+    console.log("========== CHECKOUT STATE ==========");
+    console.log("[CHECKOUT] user:", user);
+    console.log("[CHECKOUT] items.length:", items.length);
+    console.log("[CHECKOUT] coupon input:", coupon);
+    console.log("[CHECKOUT] appliedCoupon:", appliedCoupon);
+    console.log("[CHECKOUT] totals:", totals);
+    console.log("====================================");
+  }, [user, items.length, coupon, appliedCoupon, totals]);
+
+  /*
    * Load Razorpay
    */
   useEffect(() => {
+    console.log("[RAZORPAY] Checking Razorpay script");
+
     if (!document.querySelector("script[data-razorpay]")) {
+      console.log("[RAZORPAY] Adding Razorpay script");
+
       const s = document.createElement("script");
 
       s.src = "https://checkout.razorpay.com/v1/checkout.js";
@@ -92,6 +111,8 @@ export default function CheckoutPage() {
       s.dataset.razorpay = "1";
 
       document.body.appendChild(s);
+    } else {
+      console.log("[RAZORPAY] Razorpay script already exists");
     }
   }, []);
 
@@ -101,59 +122,213 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!user) return;
 
+    console.log("========== LOAD ADDRESSES ==========");
+    console.log("[ADDRESS] Loading saved addresses");
+    console.log("[ADDRESS] User:", user);
+    console.log("====================================");
+
     void apiClient()
       .request<any>(myAddressesQuery)
       .then((r) => {
+        console.log("[ADDRESS] Saved addresses response:", r);
+        console.log("[ADDRESS] Addresses:", r.myAddresses);
+
         setAddresses(r.myAddresses || []);
 
         if (r.myAddresses?.[0]) {
+          console.log("[ADDRESS] Selecting first saved address:", r.myAddresses[0]);
           setAddress(r.myAddresses[0]);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error("[ADDRESS] Failed to load addresses:", err);
+      });
   }, [user]);
 
   /*
+   * ============================================================
    * Calculate checkout totals
+   * ============================================================
    *
-   * Coupon errors are handled separately so we never show
-   * the raw GraphQL error object to the customer.
+   * IMPORTANT:
+   * This is the browser-side diagnostic section.
+   *
+   * We want to prove:
+   *
+   * coupon input
+   *      ↓
+   * appliedCoupon
+   *      ↓
+   * GraphQL variables
+   *      ↓
+   * checkoutTotals response
+   *
+   * ============================================================
    */
   useEffect(() => {
-    if (!user || !items.length) return;
+    console.log("");
+    console.log("==============================================");
+    console.log("CHECKOUT TOTALS EFFECT");
+    console.log("==============================================");
+
+    console.log("[CHECKOUT TOTALS] user exists:", !!user);
+    console.log("[CHECKOUT TOTALS] items.length:", items.length);
+    console.log("[CHECKOUT TOTALS] coupon input:", coupon);
+    console.log("[CHECKOUT TOTALS] appliedCoupon:", appliedCoupon);
+
+    if (!user || !items.length) {
+      console.log(
+        "[CHECKOUT TOTALS] SKIPPED because user/cart is not ready",
+      );
+
+      return;
+    }
+
+    console.log("[CHECKOUT TOTALS] Scheduling request in 250ms...");
 
     const t = setTimeout(() => {
+      const variables = {
+        couponCode: appliedCoupon || undefined,
+      };
+
+      console.log("");
+      console.log("==============================================");
+      console.log("SENDING CHECKOUT TOTALS REQUEST");
+      console.log("==============================================");
+
+      console.log("[CHECKOUT TOTALS] GraphQL query:");
+      console.log(checkoutTotalsQuery);
+
+      console.log("[CHECKOUT TOTALS] Variables:", variables);
+
+      console.log(
+        "[CHECKOUT TOTALS] couponCode:",
+        variables.couponCode,
+      );
+
+      console.log(
+        "[CHECKOUT TOTALS] couponCode JSON:",
+        JSON.stringify(variables.couponCode),
+      );
+
+      console.log("==============================================");
+
       void apiClient()
-        .request<any>(checkoutTotalsQuery, {
-          couponCode: appliedCoupon || undefined,
-        })
+        .request<any>(checkoutTotalsQuery, variables)
         .then((r) => {
+          console.log("");
+          console.log("==============================================");
+          console.log("CHECKOUT TOTALS SUCCESS");
+          console.log("==============================================");
+
+          console.log("[CHECKOUT TOTALS] Full response:", r);
+
+          console.log(
+            "[CHECKOUT TOTALS] checkoutTotals:",
+            r.checkoutTotals,
+          );
+
+          console.log(
+            "[CHECKOUT TOTALS] subtotalInr:",
+            r.checkoutTotals?.subtotalInr,
+          );
+
+          console.log(
+            "[CHECKOUT TOTALS] discountInr:",
+            r.checkoutTotals?.discountInr,
+          );
+
+          console.log(
+            "[CHECKOUT TOTALS] taxInr:",
+            r.checkoutTotals?.taxInr,
+          );
+
+          console.log(
+            "[CHECKOUT TOTALS] shippingInr:",
+            r.checkoutTotals?.shippingInr,
+          );
+
+          console.log(
+            "[CHECKOUT TOTALS] totalInr:",
+            r.checkoutTotals?.totalInr,
+          );
+
+          console.log("==============================================");
+
           setTotals(r.checkoutTotals);
 
           setCouponError("");
           setError("");
         })
+
         .catch((err: any) => {
-          const graphqlMessage = err?.response?.errors?.[0]?.message || "";
+          console.log("");
+          console.log("==============================================");
+          console.log("CHECKOUT TOTALS ERROR");
+          console.log("==============================================");
 
-          /*
-           * Clean coupon error for the UI.
-           */
-          if (graphqlMessage === "Invalid coupon code.") {
-            setCouponError("Invalid coupon code.");
-            return;
+          console.error("[CHECKOUT TOTALS] Full error:", err);
+
+          console.error(
+            "[CHECKOUT TOTALS] Error response:",
+            err?.response,
+          );
+
+          console.error(
+            "[CHECKOUT TOTALS] Response data:",
+            err?.response?.data,
+          );
+
+          console.error(
+            "[CHECKOUT TOTALS] GraphQL errors:",
+            err?.response?.errors,
+          );
+
+          console.error(
+            "[CHECKOUT TOTALS] Error message:",
+            err?.message,
+          );
+
+          const graphqlMessage =
+            err?.response?.errors?.[0]?.message ||
+            err?.response?.data?.errors?.[0]?.message ||
+            err?.message ||
+            "Unable to calculate checkout total.";
+
+          console.error(
+            "[CHECKOUT TOTALS] Final GraphQL message:",
+            graphqlMessage,
+          );
+
+          const isCouponError =
+            graphqlMessage.toLowerCase().includes("coupon") ||
+            graphqlMessage.toLowerCase().includes("welcome5");
+
+          console.log(
+            "[CHECKOUT TOTALS] Is coupon error:",
+            isCouponError,
+          );
+
+          console.log("==============================================");
+
+          if (isCouponError) {
+            setCouponError(graphqlMessage);
+            setError("");
+          } else {
+            setError(graphqlMessage);
+            setCouponError("");
           }
-
-          /*
-           * Any other checkout calculation error gets
-           * a clean generic message.
-           */
-          setError("Unable to calculate checkout total.");
         });
     }, 250);
 
-    return () => clearTimeout(t);
-  }, [appliedCoupon, user, items.length]);
+    return () => {
+      console.log(
+        "[CHECKOUT TOTALS] Cancelling scheduled totals request",
+      );
+
+      clearTimeout(t);
+    };
+  }, [appliedCoupon, user, items.length, coupon]);
 
   /*
    * Empty cart
@@ -161,9 +336,13 @@ export default function CheckoutPage() {
   if (!items.length) {
     return (
       <main className="mx-auto max-w-3xl px-5 py-16">
-        <h1 className="font-serif text-5xl text-[#5e473c]">Checkout</h1>
+        <h1 className="font-serif text-5xl text-[#5e473c]">
+          Checkout
+        </h1>
 
-        <p className="mt-4 text-[#8b7a70]">Your bag is empty.</p>
+        <p className="mt-4 text-[#8b7a70]">
+          Your bag is empty.
+        </p>
 
         <Link href="/" className="mt-6 inline-block underline">
           Continue shopping
@@ -178,9 +357,13 @@ export default function CheckoutPage() {
   if (!user) {
     return (
       <main className="mx-auto max-w-3xl px-5 py-16">
-        <h1 className="font-serif text-5xl text-[#5e473c]">Checkout</h1>
+        <h1 className="font-serif text-5xl text-[#5e473c]">
+          Checkout
+        </h1>
 
-        <p className="mt-4 text-[#8b7a70]">Please sign in before checkout.</p>
+        <p className="mt-4 text-[#8b7a70]">
+          Please sign in before checkout.
+        </p>
 
         <Link
           href="/login"
@@ -212,9 +395,26 @@ export default function CheckoutPage() {
   async function submit(e: FormEvent) {
     e.preventDefault();
 
+    console.log("");
+    console.log("==============================================");
+    console.log("SUBMIT CHECKOUT");
+    console.log("==============================================");
+
+    console.log("[SUBMIT] coupon input:", coupon);
+    console.log("[SUBMIT] appliedCoupon:", appliedCoupon);
+
+    console.log("[SUBMIT] Address:", address);
+
+    console.log(
+      "[SUBMIT] Coupon being sent to createPaymentOrder:",
+      appliedCoupon || null,
+    );
+
     const phoneValidationError = validatePhone(address.phone || "");
 
     if (phoneValidationError) {
+      console.log("[SUBMIT] Phone validation failed:", phoneValidationError);
+
       setPhoneError(phoneValidationError);
       setError("");
       return;
@@ -226,7 +426,7 @@ export default function CheckoutPage() {
     setMessage("");
 
     try {
-      const r = await apiClient().request<any>(createPaymentOrderMutation, {
+      const paymentVariables = {
         ...address,
 
         /*
@@ -234,7 +434,53 @@ export default function CheckoutPage() {
          * Use appliedCoupon, not the raw input value.
          */
         couponCode: appliedCoupon || null,
-      });
+      };
+
+      console.log("");
+      console.log("==============================================");
+      console.log("CREATE PAYMENT ORDER REQUEST");
+      console.log("==============================================");
+
+      console.log(
+        "[PAYMENT ORDER] Variables:",
+        paymentVariables,
+      );
+
+      console.log(
+        "[PAYMENT ORDER] Coupon:",
+        paymentVariables.couponCode,
+      );
+
+      console.log("==============================================");
+
+      const r = await apiClient().request<any>(
+        createPaymentOrderMutation,
+        paymentVariables,
+      );
+
+      console.log("");
+      console.log("==============================================");
+      console.log("CREATE PAYMENT ORDER SUCCESS");
+      console.log("==============================================");
+
+      console.log("[PAYMENT ORDER] Full response:", r);
+
+      console.log(
+        "[PAYMENT ORDER] createPaymentOrder:",
+        r.createPaymentOrder,
+      );
+
+      console.log(
+        "[PAYMENT ORDER] Order ID:",
+        r.createPaymentOrder?.orderId,
+      );
+
+      console.log(
+        "[PAYMENT ORDER] Order number:",
+        r.createPaymentOrder?.orderNumber,
+      );
+
+      console.log("==============================================");
 
       if (!window.Razorpay) {
         throw new Error(
@@ -268,24 +514,59 @@ export default function CheckoutPage() {
         handler: async (response: any) => {
           try {
             setBusy(true);
+            setError("");
 
-            const verified = await apiClient().request<any>(
-              verifyPaymentMutation,
-              {
-                orderId: r.createPaymentOrder.orderId,
-                razorpayOrderId: response.razorpay_order_id,
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpaySignature: response.razorpay_signature,
-              },
+            console.log(
+              "VERIFYING PAYMENT FOR ORDER:",
+              r.createPaymentOrder.orderId,
             );
 
-            router.push(`/account/orders/${verified.verifyPayment.id}`);
-          } catch (err) {
-            /*
-             * Never expose raw GraphQL error objects.
-             */
-            setError("Payment verification failed. Please contact support.");
-          } finally {
+            await apiClient().request<any>(verifyPaymentMutation, {
+              orderId: r.createPaymentOrder.orderId,
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+            });
+
+            const orderId = r.createPaymentOrder.orderId;
+
+            console.log("========== CHECKOUT REDIRECT ==========");
+            console.log(
+              "createPaymentOrder response:",
+              r.createPaymentOrder,
+            );
+            console.log("ORDER ID:", orderId);
+            console.log("========================================");
+
+            if (!orderId || orderId === "undefined") {
+              throw new Error(
+                "Payment succeeded, but the server did not return a valid order ID.",
+              );
+            }
+
+            await refreshCart();
+
+            router.push(`/account/orders/${orderId}`);
+
+            // Backend clears the paid order's cart.
+            // Refresh frontend cart state so the bag becomes empty immediately.
+            await refreshCart();
+
+            // IMPORTANT:
+            // Use the original orderId returned by createPaymentOrder.
+            // Do NOT use verified.verifyPayment.id.
+            router.push(
+              `/account/orders/${r.createPaymentOrder.orderId}`,
+            );
+          } catch (err: any) {
+            console.error("VERIFY PAYMENT ERROR:", err);
+
+            const graphqlMessage =
+              err?.response?.errors?.[0]?.message ||
+              err?.message ||
+              "Payment verification failed. Please contact support.";
+
+            setError(graphqlMessage);
             setBusy(false);
           }
         },
@@ -298,8 +579,14 @@ export default function CheckoutPage() {
       const checkout = new window.Razorpay(options);
 
       checkout.on("payment.failed", (response: any) => {
+        console.error(
+          "[RAZORPAY] Payment failed:",
+          response,
+        );
+
         setError(
-          response?.error?.description || "Payment failed. You can try again.",
+          response?.error?.description ||
+            "Payment failed. You can try again.",
         );
 
         setBusy(false);
@@ -307,17 +594,48 @@ export default function CheckoutPage() {
 
       checkout.open();
     } catch (err: any) {
-      console.error("CREATE PAYMENT ORDER ERROR:", err);
+      console.log("");
+      console.log("==============================================");
+      console.log("CREATE PAYMENT ORDER ERROR");
+      console.log("==============================================");
+
+      console.error("[PAYMENT ORDER] Full error:", err);
+
+      console.error(
+        "[PAYMENT ORDER] Response:",
+        err?.response,
+      );
+
+      console.error(
+        "[PAYMENT ORDER] GraphQL errors:",
+        err?.response?.errors,
+      );
+
+      console.error(
+        "[PAYMENT ORDER] Message:",
+        err?.message,
+      );
 
       const graphqlMessage =
         err?.response?.errors?.[0]?.message ||
         err?.message ||
-        "Unknown payment error";
+        "Unable to place order.";
 
-      console.error("RAZORPAY/GRAPHQL ERROR MESSAGE:", graphqlMessage);
+      console.error(
+        "[PAYMENT ORDER] Final message:",
+        graphqlMessage,
+      );
 
-      if (graphqlMessage === "Invalid coupon code.") {
-        setCouponError("Invalid coupon code.");
+      console.log("==============================================");
+
+      const isCouponError =
+        graphqlMessage === "Invalid coupon code." ||
+        graphqlMessage.toLowerCase().includes("coupon") ||
+        graphqlMessage.toLowerCase().includes("welcome5");
+
+      if (isCouponError) {
+        setCouponError(graphqlMessage);
+        setError("");
       } else {
         setError(graphqlMessage);
       }
@@ -332,7 +650,9 @@ export default function CheckoutPage() {
         Checkout
       </p>
 
-      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Almost there.</h1>
+      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">
+        Almost there.
+      </h1>
 
       {error && (
         <p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">
@@ -358,10 +678,13 @@ export default function CheckoutPage() {
           {addresses.length > 0 && (
             <label className="mt-5 block text-sm">
               Saved address
+
               <select
                 className="mt-2 w-full rounded-xl border border-[#d9cbc0] px-4 py-3"
                 onChange={(e) => {
-                  const a = addresses.find((x) => x.id === e.target.value);
+                  const a = addresses.find(
+                    (x) => x.id === e.target.value,
+                  );
 
                   if (a) {
                     setAddress(a);
@@ -403,21 +726,28 @@ export default function CheckoutPage() {
                 <input
                   required={key !== "line2"}
                   type={key === "phone" ? "tel" : "text"}
-                  inputMode={key === "phone" ? "numeric" : undefined}
+                  inputMode={
+                    key === "phone" ? "numeric" : undefined
+                  }
                   maxLength={key === "phone" ? 10 : undefined}
                   value={(address as any)[key] || ""}
                   onChange={(e) => {
                     let value = e.target.value;
 
                     if (key === "phone") {
-                      value = value.replace(/\D/g, "").slice(0, 10);
+                      value = value
+                        .replace(/\D/g, "")
+                        .slice(0, 10);
 
                       if (phoneError) {
                         setPhoneError(validatePhone(value));
                       }
                     }
 
-                    setAddress({ ...address, [key]: value });
+                    setAddress({
+                      ...address,
+                      [key]: value,
+                    });
                   }}
                   className={`mt-2 w-full rounded-xl border px-4 py-3 ${
                     key === "phone" && phoneError
@@ -427,7 +757,9 @@ export default function CheckoutPage() {
                 />
 
                 {key === "phone" && phoneError && (
-                  <p className="mt-1 text-sm text-red-600">{phoneError}</p>
+                  <p className="mt-1 text-sm text-red-600">
+                    {phoneError}
+                  </p>
                 )}
               </label>
             ))}
@@ -464,12 +796,14 @@ export default function CheckoutPage() {
             disabled={busy}
             className="mt-6 w-full rounded-full bg-[#5e473c] px-6 py-4 text-sm font-medium text-white disabled:opacity-50"
           >
-            {busy ? "Opening secure payment…" : "Pay securely with Razorpay"}
+            {busy
+              ? "Opening secure payment…"
+              : "Pay securely with Razorpay"}
           </button>
 
           <p className="mt-3 text-xs leading-5 text-[#8b7a70]">
-            Inventory is reserved for a short payment window and released
-            automatically if payment fails or expires.
+            Inventory is reserved for a short payment window and
+            released automatically if payment fails or expires.
           </p>
         </form>
 
@@ -479,22 +813,40 @@ export default function CheckoutPage() {
           </p>
 
           {items.map((i) => (
-            <div key={i.id} className="mt-4 flex justify-between gap-4 text-sm">
+            <div
+              key={i.id}
+              className="mt-4 flex justify-between gap-4 text-sm"
+            >
               <span>
                 {i.name} × {i.quantity}
               </span>
 
-              <span>₹{i.totalInr.toLocaleString("en-IN")}</span>
+              <span>
+                ₹{i.totalInr.toLocaleString("en-IN")}
+              </span>
             </div>
           ))}
 
           <label className="mt-6 block text-sm">
             Coupon code
+
             <div className="mt-2 flex gap-2">
               <input
                 value={coupon}
                 onChange={(e) => {
-                  setCoupon(e.target.value.toUpperCase());
+                  const value = e.target.value.toUpperCase();
+
+                  console.log(
+                    "[COUPON INPUT] User typed:",
+                    e.target.value,
+                  );
+
+                  console.log(
+                    "[COUPON INPUT] Normalized:",
+                    value,
+                  );
+
+                  setCoupon(value);
 
                   /*
                    * Clear coupon error while typing.
@@ -508,6 +860,48 @@ export default function CheckoutPage() {
               <button
                 type="button"
                 onClick={() => {
+                  const normalizedCoupon = coupon
+                    .trim()
+                    .toUpperCase();
+
+                  console.log("");
+                  console.log(
+                    "==============================================",
+                  );
+                  console.log("COUPON APPLY CLICKED");
+                  console.log(
+                    "==============================================",
+                  );
+
+                  console.log(
+                    "[COUPON APPLY] Raw input:",
+                    coupon,
+                  );
+
+                  console.log(
+                    "[COUPON APPLY] Trimmed:",
+                    coupon.trim(),
+                  );
+
+                  console.log(
+                    "[COUPON APPLY] Normalized:",
+                    normalizedCoupon,
+                  );
+
+                  console.log(
+                    "[COUPON APPLY] Previous appliedCoupon:",
+                    appliedCoupon,
+                  );
+
+                  console.log(
+                    "[COUPON APPLY] Setting appliedCoupon to:",
+                    normalizedCoupon,
+                  );
+
+                  console.log(
+                    "==============================================",
+                  );
+
                   /*
                    * Clear previous errors before
                    * applying the new coupon.
@@ -515,15 +909,18 @@ export default function CheckoutPage() {
                   setCouponError("");
                   setError("");
 
-                  setAppliedCoupon(coupon.trim().toUpperCase());
+                  setAppliedCoupon(normalizedCoupon);
                 }}
                 className="rounded-xl bg-[#5e473c] px-5 py-3 text-sm font-medium text-white"
               >
                 Apply
               </button>
             </div>
+
             {couponError && (
-              <p className="mt-2 text-sm text-red-600">{couponError}</p>
+              <p className="mt-2 text-sm text-red-600">
+                {couponError}
+              </p>
             )}
           </label>
 
@@ -532,7 +929,9 @@ export default function CheckoutPage() {
               <div className="flex justify-between">
                 <span>Subtotal</span>
 
-                <span>₹{totals.subtotalInr.toLocaleString("en-IN")}</span>
+                <span>
+                  ₹{totals.subtotalInr.toLocaleString("en-IN")}
+                </span>
               </div>
 
               <div className="flex justify-between">
@@ -540,7 +939,8 @@ export default function CheckoutPage() {
 
                 <span>
                   {totals.shippingInr
-                    ? "₹" + totals.shippingInr.toLocaleString("en-IN")
+                    ? "₹" +
+                      totals.shippingInr.toLocaleString("en-IN")
                     : "Free"}
                 </span>
               </div>
@@ -548,19 +948,25 @@ export default function CheckoutPage() {
               <div className="flex justify-between">
                 <span>Discount</span>
 
-                <span>- ₹{totals.discountInr.toLocaleString("en-IN")}</span>
+                <span>
+                  - ₹{totals.discountInr.toLocaleString("en-IN")}
+                </span>
               </div>
 
               <div className="flex justify-between">
                 <span>GST/Tax</span>
 
-                <span>₹{totals.taxInr.toLocaleString("en-IN")}</span>
+                <span>
+                  ₹{totals.taxInr.toLocaleString("en-IN")}
+                </span>
               </div>
 
               <div className="flex justify-between border-t border-[#eadfd5] pt-4 font-medium">
                 <span>Total</span>
 
-                <span>₹{totals.totalInr.toLocaleString("en-IN")}</span>
+                <span>
+                  ₹{totals.totalInr.toLocaleString("en-IN")}
+                </span>
               </div>
             </div>
           )}

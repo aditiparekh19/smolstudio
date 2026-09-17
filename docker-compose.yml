@@ -8,7 +8,7 @@ services:
       MSSQL_PID: "Developer"
       MSSQL_SA_PASSWORD: ${DATABASE_PASSWORD:-SmolStudioDev2026_Xy9}
     ports:
-      - "1433:1433"
+      - "1434:1433"
     volumes:
       - smolstudio_sql_data:/var/opt/mssql
     healthcheck:

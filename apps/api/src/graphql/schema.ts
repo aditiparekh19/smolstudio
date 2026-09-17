@@ -168,12 +168,11 @@ export const typeDefs = /* GraphQL */ `
     cart: Cart!
   }
   type CheckoutTotals {
-    subtotalInr: Int!
-    shippingInr: Int!
+    subtotalInr: Float!
+    shippingInr: Float!
     discountInr: Float!
-    taxInr: Int!
+    taxInr: Float!
     totalInr: Float!
-    couponCode: String
   }
   type PaymentOrder {
     orderId: ID!
@@ -182,11 +181,11 @@ export const typeDefs = /* GraphQL */ `
     currency: String!
     razorpayOrderId: String!
     keyId: String!
-    subtotalInr: Int!
-    shippingInr: Int!
-    discountInr: Int!
-    taxInr: Int!
-    totalInr: Int!
+    subtotalInr: Float!
+    shippingInr: Float!
+    discountInr: Float!
+    taxInr: Float!
+    totalInr: Float!
   }
   type OrderItem {
     id: ID!
@@ -226,7 +225,7 @@ export const typeDefs = /* GraphQL */ `
   type Refund {
     id: ID!
     refundId: String
-    amountInr: Int!
+    amountInr: Float!
     status: String!
     reason: String
     createdAt: String!
@@ -237,11 +236,11 @@ export const typeDefs = /* GraphQL */ `
     status: String!
     paymentStatus: String!
     currency: String!
-    subtotalInr: Int!
-    shippingInr: Int!
-    discountInr: Int!
-    taxInr: Int!
-    totalInr: Int!
+    subtotalInr: Float!
+    shippingInr: Float!
+    discountInr: Float!
+    taxInr: Float!
+    totalInr: Float!
     shippingAddress: ShippingAddress!
     trackingNumber: String
     carrier: String
@@ -295,7 +294,7 @@ export const typeDefs = /* GraphQL */ `
     orderNumber: String!
     status: String!
     paymentStatus: String!
-    totalInr: Int!
+    totalInr: Float!
     createdAt: String!
   }
   type AdminCustomer {
@@ -307,7 +306,7 @@ export const typeDefs = /* GraphQL */ `
     role: String!
     createdAt: String!
     orderCount: Int
-    totalSpentInr: Int
+    totalSpentInr: Float
     orders: [CustomerOrderSummary!]!
     addresses: [Address!]!
   }
@@ -317,7 +316,7 @@ export const typeDefs = /* GraphQL */ `
     customerCount: Int!
     orderCount: Int!
     pendingOrderCount: Int!
-    revenueInr: Int!
+    revenueInr: Float!
     returnRequestCount: Int!
     outOfStockCount: Int!
   }
@@ -342,7 +341,7 @@ export const typeDefs = /* GraphQL */ `
     customerEmail: String
     reason: String!
     status: String!
-    refundAmountInr: Int!
+    refundAmountInr: Float!
     adminNote: String
     createdAt: String!
     updatedAt: String!
@@ -533,10 +532,19 @@ export const schema = createSchema<GraphQLContext>({
         return adminDashboardStats();
       },
       checkoutTotals: async (_: unknown, args: any, ctx) => {
+        console.log("🔥🔥🔥 CHECKOUT TOTALS RESOLVER RUNNING 🔥🔥🔥");
+        console.log("🔥 COUPON RECEIVED:", args?.couponCode);
+        console.log("🔥 USER:", ctx?.user);
+
         try {
           const u = requireUser(ctx.user);
+
+          console.log("🔥 USER ID:", u.id);
+          console.log("🔥 CALLING previewCheckout...");
+
           return await previewCheckout(u.id, args.couponCode);
         } catch (e) {
+          console.error("🔥 CHECKOUT TOTALS RESOLVER ERROR:", e);
           return safeError(e);
         }
       },

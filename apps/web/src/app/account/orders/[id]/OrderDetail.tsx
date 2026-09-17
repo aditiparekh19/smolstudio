@@ -1,3 +1,261 @@
-'use client';import Link from'next/link';import{useEffect,useState}from'react';import{apiClient}from'../../../../lib/graphql';import{myOrderQuery,cancelMyOrderMutation,requestReturnMutation}from'../../../../lib/orders';import{useAuth}from'../../../../components/AuthProvider';import{useRouter}from'next/navigation';
-type O={id:string;orderNumber:string;status:string;paymentStatus:string;subtotalInr:number;shippingInr:number;discountInr:number;taxInr:number;totalInr:number;trackingNumber:string|null;carrier:string|null;trackingUrl:string|null;createdAt:string;shippedAt:string|null;deliveredAt:string|null;shippingAddress:any;items:{id:string;productName:string;sku:string;quantity:number;unitPriceInr:number;totalPriceInr:number}[]};
-export default function OrderDetail({id}:{id:string}){const{user,loading}=useAuth();const[o,setO]=useState<O|null>(null);const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[reason,setReason]=useState('');useEffect(()=>{if(loading||!user)return;void apiClient().request<{myOrder:O}>(myOrderQuery,{id}).then(r=>setO(r.myOrder)).catch(e=>setError(e instanceof Error?e.message:'Unable to load order.'))},[id,loading,user]);if(loading||!o&&!error)return <main className="mx-auto max-w-5xl px-5 py-16">Loading order…</main>;if(!user)return <main className="mx-auto max-w-5xl px-5 py-16"><Link href="/login" className="underline">Sign in</Link></main>;if(!o)return <main className="mx-auto max-w-5xl px-5 py-16 text-red-700">{error||'Order not found.'}</main>;const a=o.shippingAddress||{};const q=encodeURIComponent([a.line1,a.line2,a.city,a.state,a.postalCode,a.countryCode||'IN'].filter(Boolean).join(', '));const steps=['PAID','PROCESSING','SHIPPED','DELIVERED'];const idx=steps.indexOf(o.status);async function cancel(){if(!reason.trim())return setError('Enter a cancellation reason.');setBusy(true);try{const r=await apiClient().request<any>(cancelMyOrderMutation,{id,reason});setO(r.cancelMyOrder);setReason('')}catch(e){setError(e instanceof Error?e.message:'Cancellation failed.')}finally{setBusy(false)}}async function requestReturn(){if(!reason.trim())return setError('Enter a return reason.');setBusy(true);try{await apiClient().request(requestReturnMutation,{orderId:id,reason});setError('');alert('Return request submitted.')}catch(e){setError(e instanceof Error?e.message:'Unable to request return.')}finally{setBusy(false)}}return <main className="mx-auto max-w-5xl px-5 py-14 lg:px-8"><Link href="/account/orders" className="text-sm text-[#8b7a70]">← Orders</Link><h1 className="mt-2 font-serif text-5xl text-[#5e473c]">{o.orderNumber}</h1><p className="mt-2 text-sm text-[#8b7a70]">{new Date(o.createdAt).toLocaleString('en-IN')}</p>{error&&<p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}<div className="mt-8 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6"><div className="grid gap-3 sm:grid-cols-4">{steps.map((s,i)=><div key={s} className="text-center"><div className={`mx-auto h-3 w-3 rounded-full ${i<=idx?'bg-[#5e473c]':'bg-[#d9cbc0]'}`}/><p className="mt-2 text-xs">{s}</p></div>)}</div><p className="mt-5 text-center text-sm text-[#8b7a70]">Current status: {o.status}</p></div><div className="mt-8 grid gap-6 lg:grid-cols-[1fr_360px]"><section className="space-y-6"><div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6"><h2 className="font-serif text-2xl text-[#5e473c]">Items</h2>{o.items.map(i=><div key={i.id} className="flex justify-between gap-4 border-b border-[#f0e8e2] py-4"><div><p className="font-medium">{i.productName}</p><p className="text-xs text-[#8b7a70]">{i.sku} · Qty {i.quantity}</p></div><span>₹{Number(i.totalPriceInr).toLocaleString('en-IN')}</span></div>)}<div className="mt-5 space-y-2 text-sm"><div className="flex justify-between"><span>Subtotal</span><span>₹{o.subtotalInr}</span></div><div className="flex justify-between"><span>Shipping</span><span>₹{o.shippingInr}</span></div><div className="flex justify-between"><span>Tax</span><span>₹{o.taxInr}</span></div><div className="flex justify-between"><span>Discount</span><span>- ₹{o.discountInr}</span></div><div className="flex justify-between border-t pt-3 font-medium"><span>Total</span><span>₹{Number(o.totalInr).toLocaleString('en-IN')}</span></div></div>{o.trackingNumber&&<div className="mt-6 rounded-xl bg-[#fffaf4] p-4 text-sm"><strong>{o.carrier||'Carrier'}</strong> · {o.trackingNumber}{o.trackingUrl&&<a href={o.trackingUrl} target="_blank" rel="noreferrer" className="ml-2 underline">Track shipment</a>}</div>}</div>{['PAID','PROCESSING'].includes(o.status)&&!o.trackingNumber&&<div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6"><h2 className="font-serif text-2xl text-[#5e473c]">Cancel order</h2><textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Why would you like to cancel?" className="mt-4 min-h-24 w-full rounded-xl border border-[#d9cbc0] p-3"/><button disabled={busy} onClick={()=>void cancel()} className="mt-3 rounded-full border border-red-200 px-5 py-3 text-sm text-red-700">Cancel order & request refund</button></div>}{o.status==='DELIVERED'&&<div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6"><h2 className="font-serif text-2xl text-[#5e473c]">Request a return</h2><textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Tell us why you want to return this order" className="mt-4 min-h-24 w-full rounded-xl border border-[#d9cbc0] p-3"/><button disabled={busy} onClick={()=>void requestReturn()} className="mt-3 rounded-full bg-[#5e473c] px-5 py-3 text-sm text-white">Submit return request</button></div>}</section><aside className="rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6"><h2 className="font-serif text-2xl text-[#5e473c]">Delivery</h2><p className="mt-4 text-sm leading-6">{a.recipientName}<br/>{a.line1}{a.line2&&<><br/>{a.line2}</>}<br/>{a.city}, {a.state} {a.postalCode}</p><a target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${q}`} className="mt-4 inline-block underline text-sm">View delivery location on Google Maps</a></aside></div></main>}
+"use client";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { apiClient } from "../../../../lib/graphql";
+import {
+  myOrderQuery,
+  cancelMyOrderMutation,
+  requestReturnMutation,
+} from "../../../../lib/orders";
+import { useAuth } from "../../../../components/AuthProvider";
+import { useRouter } from "next/navigation";
+type O = {
+  id: string;
+  orderNumber: string;
+  status: string;
+  paymentStatus: string;
+  subtotalInr: number;
+  shippingInr: number;
+  discountInr: number;
+  taxInr: number;
+  totalInr: number;
+  trackingNumber: string | null;
+  carrier: string | null;
+  trackingUrl: string | null;
+  createdAt: string;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  shippingAddress: any;
+  items: {
+    id: string;
+    productName: string;
+    sku: string;
+    quantity: number;
+    unitPriceInr: number;
+    totalPriceInr: number;
+  }[];
+};
+export default function OrderDetail({ id }: { id: string }) {
+  const { user, loading } = useAuth();
+  const [o, setO] = useState<O | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState("");
+  useEffect(() => {
+    if (loading || !user) return;
+    void apiClient()
+      .request<{ myOrder: O }>(myOrderQuery, { id })
+      .then((r) => setO(r.myOrder))
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "Unable to load order."),
+      );
+  }, [id, loading, user]);
+  if (loading || (!o && !error))
+    return <main className="mx-auto max-w-5xl px-5 py-16">Loading order…</main>;
+  if (!user)
+    return (
+      <main className="mx-auto max-w-5xl px-5 py-16">
+        <Link href="/login" className="underline">
+          Sign in
+        </Link>
+      </main>
+    );
+  if (!o)
+    return (
+      <main className="mx-auto max-w-5xl px-5 py-16 text-red-700">
+        {error || "Order not found."}
+      </main>
+    );
+  const a = o.shippingAddress || {};
+  const q = encodeURIComponent(
+    [a.line1, a.line2, a.city, a.state, a.postalCode, a.countryCode || "IN"]
+      .filter(Boolean)
+      .join(", "),
+  );
+  const steps = ["PAID", "PROCESSING", "SHIPPED", "DELIVERED"];
+  const idx = steps.indexOf(o.status);
+  async function cancel() {
+    if (!reason.trim()) return setError("Enter a cancellation reason.");
+    setBusy(true);
+    try {
+      const r = await apiClient().request<any>(cancelMyOrderMutation, {
+        id,
+        reason,
+      });
+      setO(r.cancelMyOrder);
+      setReason("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Cancellation failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function requestReturn() {
+    if (!reason.trim()) return setError("Enter a return reason.");
+    setBusy(true);
+    try {
+      await apiClient().request(requestReturnMutation, { orderId: id, reason });
+      setError("");
+      alert("Return request submitted.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to request return.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <main className="mx-auto max-w-5xl px-5 py-14 lg:px-8">
+      <Link href="/account/orders" className="text-sm text-[#8b7a70]">
+        ← Orders
+      </Link>
+      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">
+        {o.orderNumber}
+      </h1>
+      <p className="mt-2 text-sm text-[#8b7a70]">
+        {new Date(o.createdAt).toLocaleString("en-IN")}
+      </p>
+      {error && (
+        <p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      <div className="mt-8 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6">
+        <div className="grid gap-3 sm:grid-cols-4">
+          {steps.map((s, i) => (
+            <div key={s} className="text-center">
+              <div
+                className={`mx-auto h-3 w-3 rounded-full ${i <= idx ? "bg-[#5e473c]" : "bg-[#d9cbc0]"}`}
+              />
+              <p className="mt-2 text-xs">{s}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-5 text-center text-sm text-[#8b7a70]">
+          Current status: {o.status}
+        </p>
+      </div>
+      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_360px]">
+        <section className="space-y-6">
+          <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+            <h2 className="font-serif text-2xl text-[#5e473c]">Items</h2>
+            {o.items.map((i) => (
+              <div
+                key={i.id}
+                className="flex justify-between gap-4 border-b border-[#f0e8e2] py-4"
+              >
+                <div>
+                  <p className="font-medium">{i.productName}</p>
+                  <p className="text-xs text-[#8b7a70]">
+                    {i.sku} · Qty {i.quantity}
+                  </p>
+                </div>
+                <span>₹{Number(i.totalPriceInr).toLocaleString("en-IN")}</span>
+              </div>
+            ))}
+            <div className="mt-5 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span>₹{o.subtotalInr}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Shipping</span>
+                <span>₹{o.shippingInr}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Tax</span>
+                <span>₹{o.taxInr}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Discount</span>
+                <span>- ₹{o.discountInr}</span>
+              </div>
+              <div className="flex justify-between border-t pt-3 font-medium">
+                <span>Total</span>
+                <span>₹{Number(o.totalInr).toLocaleString("en-IN")}</span>
+              </div>
+            </div>
+            {o.trackingNumber && (
+              <div className="mt-6 rounded-xl bg-[#fffaf4] p-4 text-sm">
+                <strong>{o.carrier || "Carrier"}</strong> · {o.trackingNumber}
+                {o.trackingUrl && (
+                  <a
+                    href={o.trackingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-2 underline"
+                  >
+                    Track shipment
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+          {["PAID", "PROCESSING"].includes(o.status) && !o.trackingNumber && (
+            <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+              <h2 className="font-serif text-2xl text-[#5e473c]">
+                Cancel order
+              </h2>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Why would you like to cancel?"
+                className="mt-4 min-h-24 w-full rounded-xl border border-[#d9cbc0] p-3"
+              />
+              <button
+                disabled={busy}
+                onClick={() => void cancel()}
+                className="mt-3 rounded-full border border-red-200 px-5 py-3 text-sm text-red-700"
+              >
+                Cancel order & request refund
+              </button>
+            </div>
+          )}
+          {o.status === "DELIVERED" && (
+            <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+              <h2 className="font-serif text-2xl text-[#5e473c]">
+                Request a return
+              </h2>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Tell us why you want to return this order"
+                className="mt-4 min-h-24 w-full rounded-xl border border-[#d9cbc0] p-3"
+              />
+              <button
+                disabled={busy}
+                onClick={() => void requestReturn()}
+                className="mt-3 rounded-full bg-[#5e473c] px-5 py-3 text-sm text-white"
+              >
+                Submit return request
+              </button>
+            </div>
+          )}
+        </section>
+        <aside className="rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6">
+          <h2 className="font-serif text-2xl text-[#5e473c]">Delivery</h2>
+          <p className="mt-4 text-sm leading-6">
+            {a.recipientName}
+            <br />
+            {a.line1}
+            {a.line2 && (
+              <>
+                <br />
+                {a.line2}
+              </>
+            )}
+            <br />
+            {a.city}, {a.state} {a.postalCode}
+          </p>
+          <a
+            target="_blank"
+            rel="noreferrer"
+            href={`https://www.google.com/maps/search/?api=1&query=${q}`}
+            className="mt-4 inline-block underline text-sm"
+          >
+            View delivery location on Google Maps
+          </a>
+        </aside>
+      </div>
+    </main>
+  );
+}

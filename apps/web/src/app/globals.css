@@ -1,88 +1,223 @@
 @import "tailwindcss";
 
+/* =========================================================
+   SMOLSTUDIO GLOBAL STYLES
+   ========================================================= */
+
 :root {
-  --paper: #fbf7f0;
-  --cream: #f3e7d7;
-  --ink: #252321;
-  --espresso: #5e473c;
-  --muted: #8b7a70;
-  --line: #eadfd5;
+  --smol-bg: #fffaf4;
+  --smol-cream: #f6ecdf;
+  --smol-soft: #f3e7d7;
+  --smol-card: #eadfd3;
+  --smol-brown: #5e473c;
+  --smol-muted: #75645b;
+  --smol-border: #eadfd5;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 html {
   scroll-behavior: smooth;
 }
 
+html,
+body {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--smol-bg);
+  color: var(--smol-brown);
+  overflow-x: hidden;
 }
 
-.font-serif {
-  font-family: Georgia, "Times New Roman", serif;
+img {
+  max-width: 100%;
 }
 
-::selection {
-  background: #e7d6ca;
-  color: #3e302a;
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
 }
 
-@keyframes peek {
-  0%,
-  25%,
-  100% {
-    transform: translateX(18px);
-  }
+/* =========================================================
+   SMOLSTUDIO PEEKABOO
+   ========================================================= */
 
-  40% {
-    transform: translateX(-8px);
-  }
-
-  55% {
-    transform: translateX(-8px);
-  }
-
-  70% {
-    transform: translateX(10px);
-  }
+.peekaboo-card {
+  isolation: isolate;
+  overflow: hidden;
 }
 
-.peek-animation {
-  animation: peek 5s ease-in-out infinite;
+/* =========================================================
+   BEAR
+   ========================================================= */
+
+.bear-peek {
+  /*
+    Start mostly behind the curtain.
+    The left part is visible.
+  */
+  transform: translate3d(12px, 0, 0);
+  transform-origin: bottom center;
+
+  animation:
+    bearPeek 3.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+
   will-change: transform;
+  pointer-events: none;
 }
 
+/*
+  The bear moves in and out from behind the curtain.
 
-@keyframes floatHeart {
+  0%   = hiding
+  35%  = peeking out
+  65%  = peeking out
+  100% = hiding
+*/
+@keyframes bearPeek {
   0% {
-    transform: translateY(10px) scale(0.9);
-    opacity: 0;
+    transform: translate3d(18px, 8px, 0) rotate(-2deg);
   }
 
   20% {
-    opacity: 0.8;
+    transform: translate3d(8px, 3px, 0) rotate(-1deg);
   }
 
-  70% {
-    opacity: 0.65;
+  40% {
+    transform: translate3d(-18px, -3px, 0) rotate(1deg);
+  }
+
+  60% {
+    transform: translate3d(-18px, -3px, 0) rotate(1deg);
+  }
+
+  80% {
+    transform: translate3d(8px, 3px, 0) rotate(-1deg);
   }
 
   100% {
-    transform: translateY(-45px) scale(1.1);
-    opacity: 0;
+    transform: translate3d(18px, 8px, 0) rotate(-2deg);
   }
 }
 
-.peek-animation {
-  animation: peek 5s ease-in-out infinite;
+/* =========================================================
+   CURTAIN
+   ========================================================= */
+
+.curtain {
+  transform: translate3d(0, 0, 0);
+
+  animation:
+    curtainBreath 4.5s ease-in-out infinite;
+
+  transform-origin: right center;
+  will-change: transform;
 }
 
-.heart-animation {
-  animation: floatHeart 4s ease-in-out infinite;
+@keyframes curtainBreath {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(3px, 0, 0);
+  }
 }
 
-.heart-animation-delayed {
-  animation: floatHeart 5s ease-in-out 1s infinite;
+/* =========================================================
+   DESKTOP HOVER
+   ========================================================= */
+
+@media (min-width: 1024px) {
+  .peekaboo-card:hover .bear-peek {
+    animation-play-state: paused;
+
+    transform:
+      translate3d(-25px, -5px, 0)
+      rotate(1deg);
+
+    transition:
+      transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .peekaboo-card:hover .curtain {
+    animation-play-state: paused;
+
+    transform: translate3d(10px, 0, 0);
+
+    transition:
+      transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+/* =========================================================
+   TABLET
+   ========================================================= */
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .bear-peek {
+    left: 38%;
+    top: 18%;
+    width: 30%;
+  }
+}
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 639px) {
+  .peekaboo-card {
+    min-height: 285px;
+  }
+
+  .bear-peek {
+    left: 37%;
+    top: 17%;
+    width: 34%;
+    min-width: 82px;
+  }
+
+  .curtain {
+    width: 51%;
+  }
+}
+
+/* =========================================================
+   VERY SMALL PHONES
+   ========================================================= */
+
+@media (max-width: 380px) {
+  .peekaboo-card {
+    min-height: 265px;
+  }
+
+  .bear-peek {
+    left: 35%;
+    top: 16%;
+    width: 38%;
+    min-width: 76px;
+  }
+
+  .curtain {
+    width: 52%;
+  }
+}
+
+/* =========================================================
+   REDUCED MOTION
+   ========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .bear-peek,
+  .curtain {
+    animation: none !important;
+    transition: none !important;
+  }
 }
