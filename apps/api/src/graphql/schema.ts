@@ -34,8 +34,10 @@ import {
   listCustomerOrders,
   listCustomerReturns,
   previewCheckout,
+  requestItemAfterSales,
   requestReturn,
   verifyPayment,
+  getStoreCreditInfo,
 } from "../orders/service.js";
 import {
   adminDashboardStats,
@@ -58,6 +60,7 @@ import {
   updateReturnRequest,
 } from "../admin/service.js";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { getDb } from "../db.js";
 
 export type GraphQLContext = {
   request: FastifyRequest;
@@ -65,6 +68,7 @@ export type GraphQLContext = {
   user: AuthUser | null;
   anonymousToken: string | undefined;
 };
+
 function safeError(error: unknown): never {
   throw new GraphQLError(
     error instanceof Error ? error.message : "Request failed.",
@@ -77,6 +81,7 @@ export const typeDefs = /* GraphQL */ `
     slug: String!
     name: String!
   }
+
   type AdminCategory {
     id: ID!
     slug: String!
@@ -84,12 +89,14 @@ export const typeDefs = /* GraphQL */ `
     sortOrder: Int!
     isActive: Boolean!
   }
+
   type Variant {
     id: ID!
     size: String!
     color: String!
     stock: Int!
   }
+
   type ProductImage {
     id: ID!
     url: String!
@@ -98,6 +105,7 @@ export const typeDefs = /* GraphQL */ `
     sortOrder: Int!
     isPrimary: Boolean!
   }
+
   type AdminVariant {
     id: ID!
     sku: String!
@@ -105,6 +113,7 @@ export const typeDefs = /* GraphQL */ `
     color: String!
     stock: Int!
   }
+
   type AdminProduct {
     id: ID!
     slug: String!
@@ -122,6 +131,7 @@ export const typeDefs = /* GraphQL */ `
     images: [ProductImage!]!
     variants: [AdminVariant!]!
   }
+
   type Product {
     id: ID!
     slug: String!
@@ -138,6 +148,7 @@ export const typeDefs = /* GraphQL */ `
     stock: Int!
     variants: [Variant!]!
   }
+
   type User {
     id: ID!
     email: String!
@@ -145,6 +156,7 @@ export const typeDefs = /* GraphQL */ `
     lastName: String
     role: String!
   }
+
   type CartItem {
     id: ID!
     variantId: ID!
@@ -157,23 +169,30 @@ export const typeDefs = /* GraphQL */ `
     imageUrl: String
     totalInr: Int!
   }
+
   type Cart {
     id: ID!
     items: [CartItem!]!
     subtotalInr: Int!
     count: Int!
   }
+
   type AuthPayload {
     user: User!
     cart: Cart!
   }
+
   type CheckoutTotals {
     subtotalInr: Float!
     shippingInr: Float!
     discountInr: Float!
     taxInr: Float!
     totalInr: Float!
+    storeCreditAppliedInr: Float!
+    payableInr: Float!
+    couponCode: String
   }
+
   type PaymentOrder {
     orderId: ID!
     orderNumber: String!
@@ -186,15 +205,20 @@ export const typeDefs = /* GraphQL */ `
     discountInr: Float!
     taxInr: Float!
     totalInr: Float!
+    storeCreditAppliedInr: Float!
+    payableInr: Float!
+    couponCode: String
   }
+
   type OrderItem {
     id: ID!
     productName: String!
     sku: String!
     quantity: Int!
-    unitPriceInr: Int!
-    totalPriceInr: Int!
+    unitPriceInr: Float!
+    totalPriceInr: Float!
   }
+
   type ShippingAddress {
     recipientName: String
     line1: String
@@ -205,6 +229,7 @@ export const typeDefs = /* GraphQL */ `
     countryCode: String
     phone: String
   }
+
   type Address {
     id: ID!
     label: String
@@ -217,11 +242,13 @@ export const typeDefs = /* GraphQL */ `
     countryCode: String!
     phone: String
   }
+
   type OrderHistory {
     status: String!
     note: String
     createdAt: String!
   }
+
   type Refund {
     id: ID!
     refundId: String
@@ -230,6 +257,7 @@ export const typeDefs = /* GraphQL */ `
     reason: String
     createdAt: String!
   }
+
   type Order {
     id: ID!
     orderNumber: String!
@@ -250,6 +278,7 @@ export const typeDefs = /* GraphQL */ `
     deliveredAt: String
     items: [OrderItem!]!
   }
+
   type AdminOrder {
     id: ID!
     orderNumber: String!
@@ -289,6 +318,7 @@ export const typeDefs = /* GraphQL */ `
     history: [OrderHistory!]!
     refunds: [Refund!]!
   }
+
   type CustomerOrderSummary {
     id: ID!
     orderNumber: String!
@@ -297,6 +327,7 @@ export const typeDefs = /* GraphQL */ `
     totalInr: Float!
     createdAt: String!
   }
+
   type AdminCustomer {
     id: ID!
     email: String!
@@ -310,6 +341,7 @@ export const typeDefs = /* GraphQL */ `
     orders: [CustomerOrderSummary!]!
     addresses: [Address!]!
   }
+
   type AdminStats {
     productCount: Int!
     activeProductCount: Int!
@@ -320,6 +352,7 @@ export const typeDefs = /* GraphQL */ `
     returnRequestCount: Int!
     outOfStockCount: Int!
   }
+
   type Coupon {
     id: ID!
     code: String!
@@ -333,18 +366,50 @@ export const typeDefs = /* GraphQL */ `
     endsAt: String
     isActive: Boolean!
   }
+
   type ReturnRequest {
     id: ID!
     orderId: ID!
     orderNumber: String!
     customerId: ID!
     customerEmail: String
+
+    orderItemId: ID
+    requestType: String
+    requestedSize: String
+
     reason: String!
     status: String!
-    refundAmountInr: Float!
+
+    refundAmountInr: Float
+    approvedCreditInr: Float
+
+    replacementVariantId: ID
+    replacementOrderId: ID
+
     adminNote: String
+    adminReviewedAt: String
+    adminReviewedBy: ID
+    replacementFulfilledAt: String
+
     createdAt: String!
     updatedAt: String!
+  }
+
+  type AfterSalesRequest {
+    id: ID!
+    orderId: ID!
+    orderItemId: ID!
+    requestType: String!
+    requestedSize: String
+    calculatedPaidAmountInr: Float!
+    status: String!
+  }
+
+  type StoreCredit {
+    balanceInr: Float!
+    reservedInr: Float!
+    availableInr: Float!
   }
 
   type Query {
@@ -354,22 +419,32 @@ export const typeDefs = /* GraphQL */ `
     product(slug: String!): Product
     me: User
     cart: Cart!
+
     adminProducts(search: String, active: Boolean): [AdminProduct!]!
-    adminProduct(id: ID!): AdminProduct
+    adminProduct(id: ID): AdminProduct
+
     myOrders: [Order!]!
     myOrder(id: ID!): Order
+    myStoreCredit: StoreCredit!
+
     adminOrders(search: String, status: String): [AdminOrder!]!
     adminOrder(id: ID!): AdminOrder
+
     adminCustomers(search: String): [AdminCustomer!]!
     adminCustomer(id: ID!): AdminCustomer
+
     adminStats: AdminStats!
+
     checkoutTotals(couponCode: String): CheckoutTotals!
+
     myAddresses: [Address!]!
     myReturns: [ReturnRequest!]!
+
     adminCategories: [AdminCategory!]!
     adminCoupons: [Coupon!]!
     adminReturns(status: String): [ReturnRequest!]!
   }
+
   type Mutation {
     register(
       email: String!
@@ -377,11 +452,17 @@ export const typeDefs = /* GraphQL */ `
       firstName: String
       lastName: String
     ): AuthPayload!
+
     login(email: String!, password: String!): AuthPayload!
+
     logout: Boolean!
+
     addToCart(variantId: ID!, quantity: Int = 1): Cart!
+
     updateCartItem(itemId: ID!, quantity: Int!): Cart!
+
     removeCartItem(itemId: ID!): Cart!
+
     saveAdminProduct(
       id: ID
       name: String!
@@ -393,7 +474,9 @@ export const typeDefs = /* GraphQL */ `
       categoryId: ID!
       isActive: Boolean!
     ): AdminProduct!
+
     deleteAdminProduct(id: ID!): Boolean!
+
     saveAdminVariant(
       id: ID
       productId: ID!
@@ -402,7 +485,9 @@ export const typeDefs = /* GraphQL */ `
       color: String!
       stock: Int!
     ): AdminProduct!
+
     deleteAdminVariant(id: ID!): AdminProduct!
+
     uploadProductImage(
       productId: ID!
       filename: String!
@@ -410,9 +495,13 @@ export const typeDefs = /* GraphQL */ `
       dataBase64: String!
       altText: String
     ): AdminProduct!
+
     deleteProductImage(id: ID!): AdminProduct!
+
     setPrimaryProductImage(id: ID!): AdminProduct!
+
     reorderProductImages(productId: ID!, imageIds: [ID!]!): AdminProduct!
+
     createPaymentOrder(
       recipientName: String!
       line1: String!
@@ -424,14 +513,26 @@ export const typeDefs = /* GraphQL */ `
       phone: String
       couponCode: String
     ): PaymentOrder!
+
     verifyPayment(
       orderId: ID!
       razorpayOrderId: String!
       razorpayPaymentId: String!
       razorpaySignature: String!
     ): Order!
+
     cancelMyOrder(id: ID!, reason: String!): Order!
+
     requestReturn(orderId: ID!, reason: String!): Boolean!
+
+    requestItemAfterSales(
+      orderId: ID!
+      orderItemId: ID!
+      requestType: String!
+      reason: String!
+      requestedSize: String
+    ): AfterSalesRequest!
+
     saveAddress(
       id: ID
       label: String
@@ -444,7 +545,9 @@ export const typeDefs = /* GraphQL */ `
       countryCode: String
       phone: String
     ): [Address!]!
+
     deleteAddress(id: ID!): [Address!]!
+
     updateAdminOrder(
       id: ID!
       status: String!
@@ -453,7 +556,9 @@ export const typeDefs = /* GraphQL */ `
       trackingUrl: String
       note: String
     ): AdminOrder!
+
     refundOrder(id: ID!, amountInr: Int!, reason: String!): AdminOrder!
+
     saveCategory(
       id: ID
       name: String!
@@ -461,7 +566,9 @@ export const typeDefs = /* GraphQL */ `
       sortOrder: Int
       isActive: Boolean
     ): [AdminCategory!]!
+
     deleteCategory(id: ID!): Boolean!
+
     saveCoupon(
       id: ID
       code: String!
@@ -474,128 +581,171 @@ export const typeDefs = /* GraphQL */ `
       endsAt: String
       isActive: Boolean
     ): [Coupon!]!
+
     deleteCoupon(id: ID!): Boolean!
+
     updateReturnRequest(id: ID!, status: String!, adminNote: String): Boolean!
   }
 `;
 
 export const schema = createSchema<GraphQLContext>({
   typeDefs,
+
   resolvers: {
     Query: {
       health: () => "ok",
+
       categories: () => listCategories(),
+
       products: (_: unknown, args: any) =>
         listProducts(
           Math.min(Math.max(args.limit ?? 24, 1), 60),
           args.categorySlug,
           args.search,
         ),
+
       product: (_: unknown, args: any) => getProduct(args.slug),
+
       me: (_: unknown, __: unknown, ctx) => ctx.user,
+
       cart: (_: unknown, __: unknown, ctx) =>
         getCart(ctx.user?.id ?? null, ctx.anonymousToken ?? null),
+
       adminProducts: async (_: unknown, args: any, ctx) => {
         requireAdmin(ctx.user);
         return listAdminProducts(args.search, args.active);
       },
+
       adminProduct: async (_: unknown, args: any, ctx) => {
         requireAdmin(ctx.user);
         return getAdminProduct(args.id);
       },
+
       myOrders: async (_: unknown, __: unknown, ctx) => {
         const u = requireUser(ctx.user);
         return listCustomerOrders(u.id);
       },
+
       myOrder: async (_: unknown, args: any, ctx) => {
         const u = requireUser(ctx.user);
         return getCustomerOrder(u.id, args.id);
       },
+
       adminOrders: async (_: unknown, args: any, ctx) => {
         requireAdmin(ctx.user);
         return listAdminOrders(args.search, args.status);
       },
+
       adminOrder: async (_: unknown, args: any, ctx) => {
         requireAdmin(ctx.user);
         return getAdminOrder(args.id);
       },
+
       adminCustomers: async (_: unknown, args: any, ctx) => {
         requireAdmin(ctx.user);
         return listAdminCustomers(args.search);
       },
+
       adminCustomer: async (_: unknown, args: any, ctx) => {
         requireAdmin(ctx.user);
         return getAdminCustomer(args.id);
       },
+
       adminStats: async (_: unknown, __: unknown, ctx) => {
         requireAdmin(ctx.user);
         return adminDashboardStats();
       },
-      checkoutTotals: async (_: unknown, args: any, ctx) => {
-        console.log("🔥🔥🔥 CHECKOUT TOTALS RESOLVER RUNNING 🔥🔥🔥");
-        console.log("🔥 COUPON RECEIVED:", args?.couponCode);
-        console.log("🔥 USER:", ctx?.user);
 
+      checkoutTotals: async (_: unknown, args: any, ctx) => {
         try {
           const u = requireUser(ctx.user);
 
-          console.log("🔥 USER ID:", u.id);
-          console.log("🔥 CALLING previewCheckout...");
-
           return await previewCheckout(u.id, args.couponCode);
         } catch (e) {
-          console.error("🔥 CHECKOUT TOTALS RESOLVER ERROR:", e);
           return safeError(e);
         }
       },
+
       myAddresses: async (_: unknown, __: unknown, ctx) => {
         const u = requireUser(ctx.user);
         return listAddresses(u.id);
       },
+
       myReturns: async (_: unknown, __: unknown, ctx) => {
         const u = requireUser(ctx.user);
         return listCustomerReturns(u.id);
       },
+
       adminCategories: async (_: unknown, __: unknown, ctx) => {
         requireAdmin(ctx.user);
         return listCategoriesAdmin();
       },
+
       adminCoupons: async (_: unknown, __: unknown, ctx) => {
         requireAdmin(ctx.user);
         return listCoupons();
       },
+
       adminReturns: async (_: unknown, args: any, ctx) => {
         requireAdmin(ctx.user);
         return listReturnRequests(args.status);
       },
+
+      myStoreCredit: async (_: unknown, __: unknown, ctx) => {
+        const u = requireUser(ctx.user);
+        const pool = await getDb();
+
+        const credit = await getStoreCreditInfo(pool, u.id);
+
+        return {
+          balanceInr: credit.balanceInr,
+          reservedInr: credit.reservedInr,
+          availableInr: credit.availableInr,
+        };
+      },
     },
+
     Mutation: {
       register: async (_: unknown, args: any, ctx) => {
         try {
           const user = await registerUser(args, ctx.reply);
+
           await mergeGuestCart(user.id, ctx.anonymousToken);
-          return { user, cart: await getCart(user.id, null) };
+
+          return {
+            user,
+            cart: await getCart(user.id, null),
+          };
         } catch (e) {
           return safeError(e);
         }
       },
+
       login: async (_: unknown, args: any, ctx) => {
         try {
           const user = await loginUser(args.email, args.password, ctx.reply);
+
           await mergeGuestCart(user.id, ctx.anonymousToken);
-          return { user, cart: await getCart(user.id, null) };
+
+          return {
+            user,
+            cart: await getCart(user.id, null),
+          };
         } catch (e) {
           return safeError(e);
         }
       },
+
       logout: async (_: unknown, __: unknown, ctx) => {
         try {
           await logoutUser(ctx.request, ctx.reply);
+
           return true;
         } catch (e) {
           return safeError(e);
         }
       },
+
       addToCart: async (_: unknown, args: any, ctx) => {
         try {
           return await addToCart(
@@ -608,6 +758,7 @@ export const schema = createSchema<GraphQLContext>({
           return safeError(e);
         }
       },
+
       updateCartItem: async (_: unknown, args: any, ctx) => {
         try {
           return await updateCartItem(
@@ -620,6 +771,7 @@ export const schema = createSchema<GraphQLContext>({
           return safeError(e);
         }
       },
+
       removeCartItem: async (_: unknown, args: any, ctx) => {
         try {
           return await removeCartItem(
@@ -631,6 +783,7 @@ export const schema = createSchema<GraphQLContext>({
           return safeError(e);
         }
       },
+
       saveAdminProduct: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
@@ -639,6 +792,7 @@ export const schema = createSchema<GraphQLContext>({
           return safeError(e);
         }
       },
+
       deleteAdminProduct: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
@@ -647,6 +801,7 @@ export const schema = createSchema<GraphQLContext>({
           return safeError(e);
         }
       },
+
       saveAdminVariant: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
@@ -655,6 +810,7 @@ export const schema = createSchema<GraphQLContext>({
           return safeError(e);
         }
       },
+
       deleteAdminVariant: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
@@ -663,49 +819,61 @@ export const schema = createSchema<GraphQLContext>({
           return safeError(e);
         }
       },
+
       uploadProductImage: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await uploadProductImage(args);
         } catch (e) {
           return safeError(e);
         }
       },
+
       deleteProductImage: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await deleteProductImage(args.id);
         } catch (e) {
           return safeError(e);
         }
       },
+
       setPrimaryProductImage: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await setPrimaryProductImage(args.id);
         } catch (e) {
           return safeError(e);
         }
       },
+
       reorderProductImages: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await reorderProductImages(args.productId, args.imageIds);
         } catch (e) {
           return safeError(e);
         }
       },
+
       createPaymentOrder: async (_: unknown, args: any, ctx) => {
         try {
           const u = requireUser(ctx.user);
+
           return await createPaymentOrder(u.id, args);
         } catch (e) {
           return safeError(e);
         }
       },
+
       verifyPayment: async (_: unknown, args: any, ctx) => {
         try {
           const u = requireUser(ctx.user);
+
           const r = await verifyPayment(
             u.id,
             args.orderId,
@@ -713,96 +881,138 @@ export const schema = createSchema<GraphQLContext>({
             args.razorpayPaymentId,
             args.razorpaySignature,
           );
+
           return await getCustomerOrder(u.id, r.orderId);
         } catch (e) {
           return safeError(e);
         }
       },
+
       cancelMyOrder: async (_: unknown, args: any, ctx) => {
         try {
           const u = requireUser(ctx.user);
+
           return await cancelCustomerOrder(u.id, args.id, args.reason);
         } catch (e) {
           return safeError(e);
         }
       },
+
       requestReturn: async (_: unknown, args: any, ctx) => {
         try {
           const u = requireUser(ctx.user);
+
           await requestReturn(u.id, args.orderId, args.reason);
+
           return true;
         } catch (e) {
           return safeError(e);
         }
       },
+
+      requestItemAfterSales: async (_: unknown, args: any, ctx) => {
+        try {
+          const u = requireUser(ctx.user);
+
+          return await requestItemAfterSales(
+            u.id,
+            args.orderId,
+            args.orderItemId,
+            args.requestType,
+            args.reason,
+            args.requestedSize,
+          );
+        } catch (e) {
+          return safeError(e);
+        }
+      },
+
       saveAddress: async (_: unknown, args: any, ctx) => {
         try {
           const u = requireUser(ctx.user);
+
           return await saveAddress(u.id, args);
         } catch (e) {
           return safeError(e);
         }
       },
+
       deleteAddress: async (_: unknown, args: any, ctx) => {
         try {
           const u = requireUser(ctx.user);
+
           return await deleteAddress(u.id, args.id);
         } catch (e) {
           return safeError(e);
         }
       },
+
       updateAdminOrder: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await updateAdminOrder(args);
         } catch (e) {
           return safeError(e);
         }
       },
+
       refundOrder: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           await adminRefundOrder(args.id, args.amountInr, args.reason);
+
           return await getAdminOrder(args.id);
         } catch (e) {
           return safeError(e);
         }
       },
+
       saveCategory: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await saveCategory(args);
         } catch (e) {
           return safeError(e);
         }
       },
+
       deleteCategory: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await deleteCategory(args.id);
         } catch (e) {
           return safeError(e);
         }
       },
+
       saveCoupon: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await saveCoupon(args);
         } catch (e) {
           return safeError(e);
         }
       },
+
       deleteCoupon: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await deleteCoupon(args.id);
         } catch (e) {
           return safeError(e);
         }
       },
+
       updateReturnRequest: async (_: unknown, args: any, ctx) => {
         try {
           requireAdmin(ctx.user);
+
           return await updateReturnRequest(
             args.id,
             args.status,
@@ -813,15 +1023,20 @@ export const schema = createSchema<GraphQLContext>({
         }
       },
     },
+
     Product: {
       images: (p: any) => p.images ?? [],
+
       variants: async (p: any) => {
         const full = await getProductById(p.id);
+
         return full?.variants ?? [];
       },
     },
+
     AdminProduct: {
       images: (p: any) => p.images ?? [],
+
       variants: (p: any) => p.variants ?? [],
     },
   },
@@ -829,14 +1044,33 @@ export const schema = createSchema<GraphQLContext>({
 
 async function getProductById(id: string) {
   const { getDb } = await import("../db.js");
+
   const pool = await getDb();
+
   const r = await pool
     .request()
     .input("id", id)
     .query<any>(
-      `SELECT v.id,v.size,v.color,CAST(i.quantity_available-i.quantity_reserved AS int) stock FROM product_variants v INNER JOIN inventory i ON i.variant_id=v.id WHERE v.product_id=@id ORDER BY v.created_at`,
+      `
+        SELECT
+          v.id,
+          v.size,
+          v.color,
+          CAST(
+            i.quantity_available - i.quantity_reserved
+            AS int
+          ) stock
+        FROM product_variants v
+        INNER JOIN inventory i
+          ON i.variant_id = v.id
+        WHERE v.product_id = @id
+        ORDER BY v.created_at
+      `,
     );
-  return { variants: r.recordset };
+
+  return {
+    variants: r.recordset,
+  };
 }
 
 export async function processRazorpayWebhook(

@@ -80,30 +80,17 @@ export default function CheckoutPage() {
     [address],
   );
 
-  /*
-   * ============================================================
-   * BROWSER DEBUG — CHECKOUT STATE
-   * ============================================================
-   */
   useEffect(() => {
-    console.log("========== CHECKOUT STATE ==========");
-    console.log("[CHECKOUT] user:", user);
-    console.log("[CHECKOUT] items.length:", items.length);
-    console.log("[CHECKOUT] coupon input:", coupon);
-    console.log("[CHECKOUT] appliedCoupon:", appliedCoupon);
-    console.log("[CHECKOUT] totals:", totals);
-    console.log("====================================");
   }, [user, items.length, coupon, appliedCoupon, totals]);
 
   /*
-   * Load Razorpay
+   * Load Razorpay.
+   *
+   * We still load it for normal payments, but
+   * full store-credit orders will never open it.
    */
   useEffect(() => {
-    console.log("[RAZORPAY] Checking Razorpay script");
-
     if (!document.querySelector("script[data-razorpay]")) {
-      console.log("[RAZORPAY] Adding Razorpay script");
-
       const s = document.createElement("script");
 
       s.src = "https://checkout.razorpay.com/v1/checkout.js";
@@ -111,183 +98,52 @@ export default function CheckoutPage() {
       s.dataset.razorpay = "1";
 
       document.body.appendChild(s);
-    } else {
-      console.log("[RAZORPAY] Razorpay script already exists");
     }
   }, []);
 
   /*
-   * Load saved addresses
+   * Load saved addresses.
    */
   useEffect(() => {
     if (!user) return;
 
-    console.log("========== LOAD ADDRESSES ==========");
-    console.log("[ADDRESS] Loading saved addresses");
-    console.log("[ADDRESS] User:", user);
-    console.log("====================================");
-
     void apiClient()
       .request<any>(myAddressesQuery)
       .then((r) => {
-        console.log("[ADDRESS] Saved addresses response:", r);
-        console.log("[ADDRESS] Addresses:", r.myAddresses);
-
         setAddresses(r.myAddresses || []);
 
         if (r.myAddresses?.[0]) {
-          console.log("[ADDRESS] Selecting first saved address:", r.myAddresses[0]);
           setAddress(r.myAddresses[0]);
         }
       })
       .catch((err) => {
-        console.error("[ADDRESS] Failed to load addresses:", err);
       });
   }, [user]);
 
   /*
-   * ============================================================
-   * Calculate checkout totals
-   * ============================================================
-   *
-   * IMPORTANT:
-   * This is the browser-side diagnostic section.
-   *
-   * We want to prove:
-   *
-   * coupon input
-   *      ↓
-   * appliedCoupon
-   *      ↓
-   * GraphQL variables
-   *      ↓
-   * checkoutTotals response
-   *
-   * ============================================================
+   * Calculate checkout totals.
    */
   useEffect(() => {
-    console.log("");
-    console.log("==============================================");
-    console.log("CHECKOUT TOTALS EFFECT");
-    console.log("==============================================");
-
-    console.log("[CHECKOUT TOTALS] user exists:", !!user);
-    console.log("[CHECKOUT TOTALS] items.length:", items.length);
-    console.log("[CHECKOUT TOTALS] coupon input:", coupon);
-    console.log("[CHECKOUT TOTALS] appliedCoupon:", appliedCoupon);
-
     if (!user || !items.length) {
-      console.log(
-        "[CHECKOUT TOTALS] SKIPPED because user/cart is not ready",
-      );
-
       return;
     }
-
-    console.log("[CHECKOUT TOTALS] Scheduling request in 250ms...");
 
     const t = setTimeout(() => {
       const variables = {
         couponCode: appliedCoupon || undefined,
       };
 
-      console.log("");
-      console.log("==============================================");
-      console.log("SENDING CHECKOUT TOTALS REQUEST");
-      console.log("==============================================");
-
-      console.log("[CHECKOUT TOTALS] GraphQL query:");
-      console.log(checkoutTotalsQuery);
-
-      console.log("[CHECKOUT TOTALS] Variables:", variables);
-
-      console.log(
-        "[CHECKOUT TOTALS] couponCode:",
-        variables.couponCode,
-      );
-
-      console.log(
-        "[CHECKOUT TOTALS] couponCode JSON:",
-        JSON.stringify(variables.couponCode),
-      );
-
-      console.log("==============================================");
 
       void apiClient()
         .request<any>(checkoutTotalsQuery, variables)
         .then((r) => {
-          console.log("");
-          console.log("==============================================");
-          console.log("CHECKOUT TOTALS SUCCESS");
-          console.log("==============================================");
-
-          console.log("[CHECKOUT TOTALS] Full response:", r);
-
-          console.log(
-            "[CHECKOUT TOTALS] checkoutTotals:",
-            r.checkoutTotals,
-          );
-
-          console.log(
-            "[CHECKOUT TOTALS] subtotalInr:",
-            r.checkoutTotals?.subtotalInr,
-          );
-
-          console.log(
-            "[CHECKOUT TOTALS] discountInr:",
-            r.checkoutTotals?.discountInr,
-          );
-
-          console.log(
-            "[CHECKOUT TOTALS] taxInr:",
-            r.checkoutTotals?.taxInr,
-          );
-
-          console.log(
-            "[CHECKOUT TOTALS] shippingInr:",
-            r.checkoutTotals?.shippingInr,
-          );
-
-          console.log(
-            "[CHECKOUT TOTALS] totalInr:",
-            r.checkoutTotals?.totalInr,
-          );
-
-          console.log("==============================================");
 
           setTotals(r.checkoutTotals);
 
           setCouponError("");
           setError("");
         })
-
         .catch((err: any) => {
-          console.log("");
-          console.log("==============================================");
-          console.log("CHECKOUT TOTALS ERROR");
-          console.log("==============================================");
-
-          console.error("[CHECKOUT TOTALS] Full error:", err);
-
-          console.error(
-            "[CHECKOUT TOTALS] Error response:",
-            err?.response,
-          );
-
-          console.error(
-            "[CHECKOUT TOTALS] Response data:",
-            err?.response?.data,
-          );
-
-          console.error(
-            "[CHECKOUT TOTALS] GraphQL errors:",
-            err?.response?.errors,
-          );
-
-          console.error(
-            "[CHECKOUT TOTALS] Error message:",
-            err?.message,
-          );
 
           const graphqlMessage =
             err?.response?.errors?.[0]?.message ||
@@ -295,21 +151,9 @@ export default function CheckoutPage() {
             err?.message ||
             "Unable to calculate checkout total.";
 
-          console.error(
-            "[CHECKOUT TOTALS] Final GraphQL message:",
-            graphqlMessage,
-          );
-
           const isCouponError =
             graphqlMessage.toLowerCase().includes("coupon") ||
             graphqlMessage.toLowerCase().includes("welcome5");
-
-          console.log(
-            "[CHECKOUT TOTALS] Is coupon error:",
-            isCouponError,
-          );
-
-          console.log("==============================================");
 
           if (isCouponError) {
             setCouponError(graphqlMessage);
@@ -321,28 +165,15 @@ export default function CheckoutPage() {
         });
     }, 250);
 
-    return () => {
-      console.log(
-        "[CHECKOUT TOTALS] Cancelling scheduled totals request",
-      );
+    return () => clearTimeout(t);
+  }, [appliedCoupon, user, items.length]);
 
-      clearTimeout(t);
-    };
-  }, [appliedCoupon, user, items.length, coupon]);
-
-  /*
-   * Empty cart
-   */
   if (!items.length) {
     return (
       <main className="mx-auto max-w-3xl px-5 py-16">
-        <h1 className="font-serif text-5xl text-[#5e473c]">
-          Checkout
-        </h1>
+        <h1 className="font-serif text-5xl text-[#5e473c]">Checkout</h1>
 
-        <p className="mt-4 text-[#8b7a70]">
-          Your bag is empty.
-        </p>
+        <p className="mt-4 text-[#8b7a70]">Your bag is empty.</p>
 
         <Link href="/" className="mt-6 inline-block underline">
           Continue shopping
@@ -351,19 +182,12 @@ export default function CheckoutPage() {
     );
   }
 
-  /*
-   * User must be logged in
-   */
   if (!user) {
     return (
       <main className="mx-auto max-w-3xl px-5 py-16">
-        <h1 className="font-serif text-5xl text-[#5e473c]">
-          Checkout
-        </h1>
+        <h1 className="font-serif text-5xl text-[#5e473c]">Checkout</h1>
 
-        <p className="mt-4 text-[#8b7a70]">
-          Please sign in before checkout.
-        </p>
+        <p className="mt-4 text-[#8b7a70]">Please sign in before checkout.</p>
 
         <Link
           href="/login"
@@ -389,32 +213,12 @@ export default function CheckoutPage() {
     return "";
   }
 
-  /*
-   * Submit order / open Razorpay
-   */
   async function submit(e: FormEvent) {
     e.preventDefault();
-
-    console.log("");
-    console.log("==============================================");
-    console.log("SUBMIT CHECKOUT");
-    console.log("==============================================");
-
-    console.log("[SUBMIT] coupon input:", coupon);
-    console.log("[SUBMIT] appliedCoupon:", appliedCoupon);
-
-    console.log("[SUBMIT] Address:", address);
-
-    console.log(
-      "[SUBMIT] Coupon being sent to createPaymentOrder:",
-      appliedCoupon || null,
-    );
 
     const phoneValidationError = validatePhone(address.phone || "");
 
     if (phoneValidationError) {
-      console.log("[SUBMIT] Phone validation failed:", phoneValidationError);
-
       setPhoneError(phoneValidationError);
       setError("");
       return;
@@ -428,59 +232,53 @@ export default function CheckoutPage() {
     try {
       const paymentVariables = {
         ...address,
-
-        /*
-         * IMPORTANT:
-         * Use appliedCoupon, not the raw input value.
-         */
         couponCode: appliedCoupon || null,
       };
 
-      console.log("");
-      console.log("==============================================");
-      console.log("CREATE PAYMENT ORDER REQUEST");
-      console.log("==============================================");
-
-      console.log(
-        "[PAYMENT ORDER] Variables:",
-        paymentVariables,
-      );
-
-      console.log(
-        "[PAYMENT ORDER] Coupon:",
-        paymentVariables.couponCode,
-      );
-
-      console.log("==============================================");
 
       const r = await apiClient().request<any>(
         createPaymentOrderMutation,
         paymentVariables,
       );
 
-      console.log("");
-      console.log("==============================================");
-      console.log("CREATE PAYMENT ORDER SUCCESS");
-      console.log("==============================================");
+      const paymentOrder = r.createPaymentOrder;
 
-      console.log("[PAYMENT ORDER] Full response:", r);
 
-      console.log(
-        "[PAYMENT ORDER] createPaymentOrder:",
-        r.createPaymentOrder,
-      );
+      if (!paymentOrder?.orderId) {
+        throw new Error("The server did not return a valid order ID.");
+      }
 
-      console.log(
-        "[PAYMENT ORDER] Order ID:",
-        r.createPaymentOrder?.orderId,
-      );
+      /*
+       * ========================================================
+       * FULL STORE CREDIT CHECKOUT
+       * ========================================================
+       *
+       * Backend returns:
+       *
+       * amount: 0
+       * razorpayOrderId: ""
+       *
+       * Do NOT open Razorpay.
+       */
+      if (
+        Number(paymentOrder.amount) <= 0 ||
+        Number(paymentOrder.payableInr) <= 0
+      ) {
 
-      console.log(
-        "[PAYMENT ORDER] Order number:",
-        r.createPaymentOrder?.orderNumber,
-      );
+        setMessage("Your order has been placed using store credit.");
 
-      console.log("==============================================");
+        await refreshCart();
+
+        router.push(`/account/orders/${paymentOrder.orderId}`);
+
+        return;
+      }
+
+      /*
+       * ========================================================
+       * NORMAL RAZORPAY CHECKOUT
+       * ========================================================
+       */
 
       if (!window.Razorpay) {
         throw new Error(
@@ -488,18 +286,22 @@ export default function CheckoutPage() {
         );
       }
 
+      if (!paymentOrder.razorpayOrderId) {
+        throw new Error("Razorpay order was not created. Please try again.");
+      }
+
       const options = {
-        key: r.createPaymentOrder.keyId,
+        key: paymentOrder.keyId,
 
-        amount: r.createPaymentOrder.amount,
+        amount: paymentOrder.amount,
 
-        currency: r.createPaymentOrder.currency,
+        currency: paymentOrder.currency,
 
         name: "SmolStudio",
 
-        description: `Order ${r.createPaymentOrder.orderNumber}`,
+        description: `Order ${paymentOrder.orderNumber}`,
 
-        order_id: r.createPaymentOrder.razorpayOrderId,
+        order_id: paymentOrder.razorpayOrderId,
 
         prefill: {
           name: address.recipientName,
@@ -516,29 +318,17 @@ export default function CheckoutPage() {
             setBusy(true);
             setError("");
 
-            console.log(
-              "VERIFYING PAYMENT FOR ORDER:",
-              r.createPaymentOrder.orderId,
-            );
+            const orderId = paymentOrder.orderId;
+
 
             await apiClient().request<any>(verifyPaymentMutation, {
-              orderId: r.createPaymentOrder.orderId,
+              orderId,
               razorpayOrderId: response.razorpay_order_id,
               razorpayPaymentId: response.razorpay_payment_id,
               razorpaySignature: response.razorpay_signature,
             });
 
-            const orderId = r.createPaymentOrder.orderId;
-
-            console.log("========== CHECKOUT REDIRECT ==========");
-            console.log(
-              "createPaymentOrder response:",
-              r.createPaymentOrder,
-            );
-            console.log("ORDER ID:", orderId);
-            console.log("========================================");
-
-            if (!orderId || orderId === "undefined") {
+            if (!orderId) {
               throw new Error(
                 "Payment succeeded, but the server did not return a valid order ID.",
               );
@@ -547,19 +337,7 @@ export default function CheckoutPage() {
             await refreshCart();
 
             router.push(`/account/orders/${orderId}`);
-
-            // Backend clears the paid order's cart.
-            // Refresh frontend cart state so the bag becomes empty immediately.
-            await refreshCart();
-
-            // IMPORTANT:
-            // Use the original orderId returned by createPaymentOrder.
-            // Do NOT use verified.verifyPayment.id.
-            router.push(
-              `/account/orders/${r.createPaymentOrder.orderId}`,
-            );
           } catch (err: any) {
-            console.error("VERIFY PAYMENT ERROR:", err);
 
             const graphqlMessage =
               err?.response?.errors?.[0]?.message ||
@@ -572,21 +350,18 @@ export default function CheckoutPage() {
         },
 
         modal: {
-          ondismiss: () => setBusy(false),
+          ondismiss: () => {
+            setBusy(false);
+          },
         },
       };
 
       const checkout = new window.Razorpay(options);
 
       checkout.on("payment.failed", (response: any) => {
-        console.error(
-          "[RAZORPAY] Payment failed:",
-          response,
-        );
 
         setError(
-          response?.error?.description ||
-            "Payment failed. You can try again.",
+          response?.error?.description || "Payment failed. You can try again.",
         );
 
         setBusy(false);
@@ -594,39 +369,11 @@ export default function CheckoutPage() {
 
       checkout.open();
     } catch (err: any) {
-      console.log("");
-      console.log("==============================================");
-      console.log("CREATE PAYMENT ORDER ERROR");
-      console.log("==============================================");
-
-      console.error("[PAYMENT ORDER] Full error:", err);
-
-      console.error(
-        "[PAYMENT ORDER] Response:",
-        err?.response,
-      );
-
-      console.error(
-        "[PAYMENT ORDER] GraphQL errors:",
-        err?.response?.errors,
-      );
-
-      console.error(
-        "[PAYMENT ORDER] Message:",
-        err?.message,
-      );
 
       const graphqlMessage =
         err?.response?.errors?.[0]?.message ||
         err?.message ||
         "Unable to place order.";
-
-      console.error(
-        "[PAYMENT ORDER] Final message:",
-        graphqlMessage,
-      );
-
-      console.log("==============================================");
 
       const isCouponError =
         graphqlMessage === "Invalid coupon code." ||
@@ -644,15 +391,19 @@ export default function CheckoutPage() {
     }
   }
 
+  const storeCreditApplied = Number(totals?.storeCreditAppliedInr || 0);
+
+  const payable = Number(totals?.payableInr ?? totals?.totalInr ?? 0);
+
+  const fullyCovered = totals && payable <= 0;
+
   return (
     <main className="mx-auto max-w-6xl px-5 py-14 lg:px-8">
       <p className="text-xs uppercase tracking-[0.2em] text-[#8b7a70]">
         Checkout
       </p>
 
-      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">
-        Almost there.
-      </h1>
+      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Almost there.</h1>
 
       {error && (
         <p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">
@@ -678,13 +429,10 @@ export default function CheckoutPage() {
           {addresses.length > 0 && (
             <label className="mt-5 block text-sm">
               Saved address
-
               <select
                 className="mt-2 w-full rounded-xl border border-[#d9cbc0] px-4 py-3"
                 onChange={(e) => {
-                  const a = addresses.find(
-                    (x) => x.id === e.target.value,
-                  );
+                  const a = addresses.find((x) => x.id === e.target.value);
 
                   if (a) {
                     setAddress(a);
@@ -726,18 +474,14 @@ export default function CheckoutPage() {
                 <input
                   required={key !== "line2"}
                   type={key === "phone" ? "tel" : "text"}
-                  inputMode={
-                    key === "phone" ? "numeric" : undefined
-                  }
+                  inputMode={key === "phone" ? "numeric" : undefined}
                   maxLength={key === "phone" ? 10 : undefined}
                   value={(address as any)[key] || ""}
                   onChange={(e) => {
                     let value = e.target.value;
 
                     if (key === "phone") {
-                      value = value
-                        .replace(/\D/g, "")
-                        .slice(0, 10);
+                      value = value.replace(/\D/g, "").slice(0, 10);
 
                       if (phoneError) {
                         setPhoneError(validatePhone(value));
@@ -757,9 +501,7 @@ export default function CheckoutPage() {
                 />
 
                 {key === "phone" && phoneError && (
-                  <p className="mt-1 text-sm text-red-600">
-                    {phoneError}
-                  </p>
+                  <p className="mt-1 text-sm text-red-600">{phoneError}</p>
                 )}
               </label>
             ))}
@@ -797,13 +539,16 @@ export default function CheckoutPage() {
             className="mt-6 w-full rounded-full bg-[#5e473c] px-6 py-4 text-sm font-medium text-white disabled:opacity-50"
           >
             {busy
-              ? "Opening secure payment…"
-              : "Pay securely with Razorpay"}
+              ? "Processing…"
+              : fullyCovered
+                ? "Place order with store credit"
+                : "Pay securely with Razorpay"}
           </button>
 
           <p className="mt-3 text-xs leading-5 text-[#8b7a70]">
-            Inventory is reserved for a short payment window and
-            released automatically if payment fails or expires.
+            {fullyCovered
+              ? "Your available store credit covers the full order. No payment is required."
+              : "Inventory is reserved for a short payment window and released automatically if payment fails or expires."}
           </p>
         </form>
 
@@ -813,44 +558,24 @@ export default function CheckoutPage() {
           </p>
 
           {items.map((i) => (
-            <div
-              key={i.id}
-              className="mt-4 flex justify-between gap-4 text-sm"
-            >
+            <div key={i.id} className="mt-4 flex justify-between gap-4 text-sm">
               <span>
                 {i.name} × {i.quantity}
               </span>
 
-              <span>
-                ₹{i.totalInr.toLocaleString("en-IN")}
-              </span>
+              <span>₹{i.totalInr.toLocaleString("en-IN")}</span>
             </div>
           ))}
 
           <label className="mt-6 block text-sm">
             Coupon code
-
             <div className="mt-2 flex gap-2">
               <input
                 value={coupon}
                 onChange={(e) => {
                   const value = e.target.value.toUpperCase();
 
-                  console.log(
-                    "[COUPON INPUT] User typed:",
-                    e.target.value,
-                  );
-
-                  console.log(
-                    "[COUPON INPUT] Normalized:",
-                    value,
-                  );
-
                   setCoupon(value);
-
-                  /*
-                   * Clear coupon error while typing.
-                   */
                   setCouponError("");
                 }}
                 placeholder="WELCOME5"
@@ -860,55 +585,10 @@ export default function CheckoutPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const normalizedCoupon = coupon
-                    .trim()
-                    .toUpperCase();
+                  const normalizedCoupon = coupon.trim().toUpperCase();
 
-                  console.log("");
-                  console.log(
-                    "==============================================",
-                  );
-                  console.log("COUPON APPLY CLICKED");
-                  console.log(
-                    "==============================================",
-                  );
-
-                  console.log(
-                    "[COUPON APPLY] Raw input:",
-                    coupon,
-                  );
-
-                  console.log(
-                    "[COUPON APPLY] Trimmed:",
-                    coupon.trim(),
-                  );
-
-                  console.log(
-                    "[COUPON APPLY] Normalized:",
-                    normalizedCoupon,
-                  );
-
-                  console.log(
-                    "[COUPON APPLY] Previous appliedCoupon:",
-                    appliedCoupon,
-                  );
-
-                  console.log(
-                    "[COUPON APPLY] Setting appliedCoupon to:",
-                    normalizedCoupon,
-                  );
-
-                  console.log(
-                    "==============================================",
-                  );
-
-                  /*
-                   * Clear previous errors before
-                   * applying the new coupon.
-                   */
                   setCouponError("");
                   setError("");
-
                   setAppliedCoupon(normalizedCoupon);
                 }}
                 className="rounded-xl bg-[#5e473c] px-5 py-3 text-sm font-medium text-white"
@@ -916,10 +596,12 @@ export default function CheckoutPage() {
                 Apply
               </button>
             </div>
-
             {couponError && (
-              <p className="mt-2 text-sm text-red-600">
-                {couponError}
+              <p className="mt-2 text-sm text-red-600">{couponError}</p>
+            )}
+            {appliedCoupon && !couponError && (
+              <p className="mt-2 text-xs text-[#6d5a50]">
+                Applied: <span className="font-medium">{appliedCoupon}</span>
               </p>
             )}
           </label>
@@ -930,7 +612,7 @@ export default function CheckoutPage() {
                 <span>Subtotal</span>
 
                 <span>
-                  ₹{totals.subtotalInr.toLocaleString("en-IN")}
+                  ₹{Number(totals.subtotalInr).toLocaleString("en-IN")}
                 </span>
               </div>
 
@@ -938,9 +620,8 @@ export default function CheckoutPage() {
                 <span>Shipping</span>
 
                 <span>
-                  {totals.shippingInr
-                    ? "₹" +
-                      totals.shippingInr.toLocaleString("en-IN")
+                  {Number(totals.shippingInr)
+                    ? "₹" + Number(totals.shippingInr).toLocaleString("en-IN")
                     : "Free"}
                 </span>
               </div>
@@ -949,25 +630,44 @@ export default function CheckoutPage() {
                 <span>Discount</span>
 
                 <span>
-                  - ₹{totals.discountInr.toLocaleString("en-IN")}
+                  - ₹{Number(totals.discountInr).toLocaleString("en-IN")}
                 </span>
               </div>
 
               <div className="flex justify-between">
                 <span>GST/Tax</span>
 
-                <span>
-                  ₹{totals.taxInr.toLocaleString("en-IN")}
-                </span>
+                <span>₹{Number(totals.taxInr).toLocaleString("en-IN")}</span>
               </div>
 
               <div className="flex justify-between border-t border-[#eadfd5] pt-4 font-medium">
-                <span>Total</span>
+                <span>Order total</span>
 
-                <span>
-                  ₹{totals.totalInr.toLocaleString("en-IN")}
-                </span>
+                <span>₹{Number(totals.totalInr).toLocaleString("en-IN")}</span>
               </div>
+
+              {storeCreditApplied > 0 && (
+                <div className="flex justify-between rounded-xl bg-white px-3 py-3 text-[#5e473c]">
+                  <span>Store credit</span>
+
+                  <span className="font-medium">
+                    - ₹{storeCreditApplied.toLocaleString("en-IN")}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex justify-between border-t border-[#eadfd5] pt-4 text-base font-semibold text-[#5e473c]">
+                <span>Amount to pay</span>
+
+                <span>₹{payable.toLocaleString("en-IN")}</span>
+              </div>
+
+              {fullyCovered && (
+                <div className="rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800">
+                  Your store credit covers the entire order. You will not be
+                  charged through Razorpay.
+                </div>
+              )}
             </div>
           )}
         </aside>

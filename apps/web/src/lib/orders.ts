@@ -1,5 +1,42 @@
 import { gql } from "graphql-request";
-const orderFields = `id orderNumber status paymentStatus currency subtotalInr shippingInr discountInr taxInr totalInr trackingNumber carrier trackingUrl createdAt shippedAt deliveredAt shippingAddress { recipientName line1 line2 city state postalCode countryCode phone } items { id productName sku quantity unitPriceInr totalPriceInr }`;
+
+const orderFields = `
+  id
+  orderNumber
+  status
+  paymentStatus
+  currency
+  subtotalInr
+  shippingInr
+  discountInr
+  taxInr
+  totalInr
+  trackingNumber
+  carrier
+  trackingUrl
+  createdAt
+  shippedAt
+  deliveredAt
+  shippingAddress {
+    recipientName
+    line1
+    line2
+    city
+    state
+    postalCode
+    countryCode
+    phone
+  }
+  items {
+    id
+    productName
+    sku
+    quantity
+    unitPriceInr
+    totalPriceInr
+  }
+`;
+
 export const checkoutTotalsQuery = gql`
   query CheckoutTotals($couponCode: String) {
     checkoutTotals(couponCode: $couponCode) {
@@ -8,9 +45,13 @@ export const checkoutTotalsQuery = gql`
       discountInr
       taxInr
       totalInr
+      storeCreditAppliedInr
+      payableInr
+      couponCode
     }
   }
 `;
+
 export const createPaymentOrderMutation = gql`
   mutation CreatePaymentOrder(
     $recipientName: String!
@@ -45,18 +86,100 @@ export const createPaymentOrderMutation = gql`
       discountInr
       taxInr
       totalInr
+      storeCreditAppliedInr
+      payableInr
+      couponCode
     }
   }
 `;
-export const verifyPaymentMutation = gql`mutation VerifyPayment($orderId:ID!,$razorpayOrderId:String!,$razorpayPaymentId:String!,$razorpaySignature:String!){ verifyPayment(orderId:$orderId,razorpayOrderId:$razorpayOrderId,razorpayPaymentId:$razorpayPaymentId,razorpaySignature:$razorpaySignature){ ${orderFields} } }`;
-export const myOrdersQuery = gql`query MyOrders{ myOrders { ${orderFields} } }`;
-export const myOrderQuery = gql`query MyOrder($id:ID!){ myOrder(id:$id){ ${orderFields} } }`;
-export const cancelMyOrderMutation = gql`mutation CancelMyOrder($id:ID!,$reason:String!){ cancelMyOrder(id:$id,reason:$reason){ ${orderFields} } }`;
+
+export const verifyPaymentMutation = gql`
+  mutation VerifyPayment(
+    $orderId: ID!
+    $razorpayOrderId: String!
+    $razorpayPaymentId: String!
+    $razorpaySignature: String!
+  ) {
+    verifyPayment(
+      orderId: $orderId
+      razorpayOrderId: $razorpayOrderId
+      razorpayPaymentId: $razorpayPaymentId
+      razorpaySignature: $razorpaySignature
+    ) {
+      ${orderFields}
+    }
+  }
+`;
+
+export const myOrdersQuery = gql`
+  query MyOrders {
+    myOrders {
+      ${orderFields}
+    }
+  }
+`;
+
+export const myOrderQuery = gql`
+  query MyOrder($id: ID!) {
+    myOrder(id: $id) {
+      ${orderFields}
+    }
+  }
+`;
+
+export const cancelMyOrderMutation = gql`
+  mutation CancelMyOrder($id: ID!, $reason: String!) {
+    cancelMyOrder(id: $id, reason: $reason) {
+      ${orderFields}
+    }
+  }
+`;
+
+/*
+ * Legacy whole-order return mutation.
+ * Kept so the existing backend functionality is not removed.
+ */
 export const requestReturnMutation = gql`
   mutation RequestReturn($orderId: ID!, $reason: String!) {
     requestReturn(orderId: $orderId, reason: $reason)
   }
 `;
+
+/*
+ * New item-level after-sales request.
+ *
+ * PRODUCT_FAULT:
+ * Customer reports a fault/damage/problem.
+ *
+ * SIZE_REPLACEMENT:
+ * Customer requests another size of the same product.
+ */
+export const requestItemAfterSalesMutation = gql`
+  mutation RequestItemAfterSales(
+    $orderId: ID!
+    $orderItemId: ID!
+    $requestType: String!
+    $reason: String!
+    $requestedSize: String
+  ) {
+    requestItemAfterSales(
+      orderId: $orderId
+      orderItemId: $orderItemId
+      requestType: $requestType
+      reason: $reason
+      requestedSize: $requestedSize
+    ) {
+      id
+      orderId
+      orderItemId
+      requestType
+      requestedSize
+      calculatedPaidAmountInr
+      status
+    }
+  }
+`;
+
 export const myAddressesQuery = gql`
   query MyAddresses {
     myAddresses {
@@ -73,6 +196,7 @@ export const myAddressesQuery = gql`
     }
   }
 `;
+
 export const saveAddressMutation = gql`
   mutation SaveAddress(
     $id: ID
@@ -111,6 +235,7 @@ export const saveAddressMutation = gql`
     }
   }
 `;
+
 export const deleteAddressMutation = gql`
   mutation DeleteAddress($id: ID!) {
     deleteAddress(id: $id) {
@@ -127,26 +252,150 @@ export const deleteAddressMutation = gql`
     }
   }
 `;
+
 export const myReturnsQuery = gql`
   query MyReturns {
     myReturns {
       id
       orderId
       orderNumber
+      customerId
+      customerEmail
+      orderItemId
+      requestType
+      requestedSize
       reason
       status
       refundAmountInr
+      approvedCreditInr
+      replacementVariantId
+      replacementOrderId
       adminNote
+      adminReviewedAt
+      adminReviewedBy
+      replacementFulfilledAt
       createdAt
       updatedAt
     }
   }
 `;
-const adminOrderFields = `id orderNumber status paymentStatus paymentProvider paymentReference paymentOrderId subtotalInr shippingInr discountInr taxInr totalInr currency trackingNumber carrier trackingUrl createdAt updatedAt shippedAt deliveredAt cancelledAt cancelReason couponCode customerId customerEmail firstName lastName customerPhone shippingAddress { recipientName line1 line2 city state postalCode countryCode phone } items { id productName sku quantity unitPriceInr totalPriceInr } history { status note createdAt } refunds { id refundId amountInr status reason createdAt }`;
-export const adminOrdersQuery = gql`query AdminOrders($search:String,$status:String){ adminOrders(search:$search,status:$status){ ${adminOrderFields} } }`;
-export const adminOrderQuery = gql`query AdminOrder($id:ID!){ adminOrder(id:$id){ ${adminOrderFields} } }`;
-export const adminUpdateOrderMutation = gql`mutation UpdateAdminOrder($id:ID!,$status:String!,$trackingNumber:String,$carrier:String,$trackingUrl:String,$note:String){ updateAdminOrder(id:$id,status:$status,trackingNumber:$trackingNumber,carrier:$carrier,trackingUrl:$trackingUrl,note:$note){ ${adminOrderFields} } }`;
-export const adminRefundMutation = gql`mutation RefundOrder($id:ID!,$amountInr:Int!,$reason:String!){ refundOrder(id:$id,amountInr:$amountInr,reason:$reason){ ${adminOrderFields} } }`;
+
+const adminOrderFields = `
+  id
+  orderNumber
+  status
+  paymentStatus
+  paymentProvider
+  paymentReference
+  paymentOrderId
+  subtotalInr
+  shippingInr
+  discountInr
+  taxInr
+  totalInr
+  currency
+  trackingNumber
+  carrier
+  trackingUrl
+  createdAt
+  updatedAt
+  shippedAt
+  deliveredAt
+  cancelledAt
+  cancelReason
+  couponCode
+  customerId
+  customerEmail
+  firstName
+  lastName
+  customerPhone
+  shippingAddress {
+    recipientName
+    line1
+    line2
+    city
+    state
+    postalCode
+    countryCode
+    phone
+  }
+  items {
+    id
+    productName
+    sku
+    quantity
+    unitPriceInr
+    totalPriceInr
+  }
+  history {
+    status
+    note
+    createdAt
+  }
+  refunds {
+    id
+    refundId
+    amountInr
+    status
+    reason
+    createdAt
+  }
+`;
+
+export const adminOrdersQuery = gql`
+  query AdminOrders($search: String, $status: String) {
+    adminOrders(search: $search, status: $status) {
+      ${adminOrderFields}
+    }
+  }
+`;
+
+export const adminOrderQuery = gql`
+  query AdminOrder($id: ID!) {
+    adminOrder(id: $id) {
+      ${adminOrderFields}
+    }
+  }
+`;
+
+export const adminUpdateOrderMutation = gql`
+  mutation UpdateAdminOrder(
+    $id: ID!
+    $status: String!
+    $trackingNumber: String
+    $carrier: String
+    $trackingUrl: String
+    $note: String
+  ) {
+    updateAdminOrder(
+      id: $id
+      status: $status
+      trackingNumber: $trackingNumber
+      carrier: $carrier
+      trackingUrl: $trackingUrl
+      note: $note
+    ) {
+      ${adminOrderFields}
+    }
+  }
+`;
+
+export const adminRefundMutation = gql`
+  mutation RefundOrder(
+    $id: ID!
+    $amountInr: Int!
+    $reason: String!
+  ) {
+    refundOrder(
+      id: $id
+      amountInr: $amountInr
+      reason: $reason
+    ) {
+      ${adminOrderFields}
+    }
+  }
+`;
+
 export const adminCustomersQuery = gql`
   query AdminCustomers($search: String) {
     adminCustomers(search: $search) {
@@ -174,6 +423,7 @@ export const adminCustomersQuery = gql`
     }
   }
 `;
+
 export const adminCustomerQuery = gql`
   query AdminCustomer($id: ID!) {
     adminCustomer(id: $id) {
@@ -207,6 +457,7 @@ export const adminCustomerQuery = gql`
     }
   }
 `;
+
 export const adminStatsQuery = gql`
   query AdminStats {
     adminStats {
@@ -221,6 +472,7 @@ export const adminStatsQuery = gql`
     }
   }
 `;
+
 export const adminCategoriesQuery = gql`
   query AdminCategories {
     adminCategories {
@@ -232,6 +484,7 @@ export const adminCategoriesQuery = gql`
     }
   }
 `;
+
 export const saveCategoryMutation = gql`
   mutation SaveCategory(
     $id: ID
@@ -255,11 +508,13 @@ export const saveCategoryMutation = gql`
     }
   }
 `;
+
 export const deleteCategoryMutation = gql`
   mutation DeleteCategory($id: ID!) {
     deleteCategory(id: $id)
   }
 `;
+
 export const adminCouponsQuery = gql`
   query AdminCoupons {
     adminCoupons {
@@ -277,6 +532,7 @@ export const adminCouponsQuery = gql`
     }
   }
 `;
+
 export const saveCouponMutation = gql`
   mutation SaveCoupon(
     $id: ID
@@ -316,11 +572,13 @@ export const saveCouponMutation = gql`
     }
   }
 `;
+
 export const deleteCouponMutation = gql`
   mutation DeleteCoupon($id: ID!) {
     deleteCoupon(id: $id)
   }
 `;
+
 export const adminReturnsQuery = gql`
   query AdminReturns($status: String) {
     adminReturns(status: $status) {
@@ -329,17 +587,45 @@ export const adminReturnsQuery = gql`
       orderNumber
       customerId
       customerEmail
+      orderItemId
+      requestType
+      requestedSize
       reason
       status
       refundAmountInr
+      approvedCreditInr
+      replacementVariantId
+      replacementOrderId
       adminNote
+      adminReviewedAt
+      adminReviewedBy
+      replacementFulfilledAt
       createdAt
       updatedAt
     }
   }
 `;
+
 export const updateReturnRequestMutation = gql`
-  mutation UpdateReturn($id: ID!, $status: String!, $adminNote: String) {
-    updateReturnRequest(id: $id, status: $status, adminNote: $adminNote)
+  mutation UpdateReturn(
+    $id: ID!
+    $status: String!
+    $adminNote: String
+  ) {
+    updateReturnRequest(
+      id: $id
+      status: $status
+      adminNote: $adminNote
+    )
+  }
+`;
+
+export const myStoreCreditQuery = gql`
+  query MyStoreCredit {
+    myStoreCredit {
+      balanceInr
+      reservedInr
+      availableInr
+    }
   }
 `;
