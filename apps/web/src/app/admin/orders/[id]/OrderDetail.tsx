@@ -128,10 +128,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
     (async () => {
       try {
         const [orderResult] = await Promise.all([
-          apiClient().request<{ adminOrder: Order }>(
-            adminOrderQuery,
-            { id },
-          ),
+          apiClient().request<{ adminOrder: Order }>(adminOrderQuery, { id }),
           loadAfterSales(),
         ]);
 
@@ -141,9 +138,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
         setCarrier(orderResult.adminOrder.carrier || "");
         setTrackingUrl(orderResult.adminOrder.trackingUrl || "");
       } catch (e) {
-        setError(
-          e instanceof Error ? e.message : "Unable to load order.",
-        );
+        setError(e instanceof Error ? e.message : "Unable to load order.");
       } finally {
         setBusy(false);
       }
@@ -184,8 +179,26 @@ export default function AdminOrderClient({ id }: { id: string }) {
 
     const amount = Number(refund);
 
-    if (!amount || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       setError("Enter a valid refund amount.");
+      return;
+    }
+
+    if (!canIssueManualRefund) {
+      setError("There is no remaining refundable amount for this order.");
+      return;
+    }
+
+    if (amount > remainingRefundableAmount) {
+      setError(
+        `Refund amount cannot exceed ₹${remainingRefundableAmount.toLocaleString(
+          "en-IN",
+          {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          },
+        )}.`,
+      );
       return;
     }
 
@@ -198,7 +211,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
         adminRefundMutation,
         {
           id: o.id,
-          amountInr: Math.round(amount),
+          amountInr: amount,
           reason: refundReason,
         },
       );
@@ -206,6 +219,12 @@ export default function AdminOrderClient({ id }: { id: string }) {
       setO(r.refundOrder);
       setRefund("");
       setMessage("Refund processed.");
+
+      /*
+       * Refresh after-sales data because an approved/processed
+       * refund request may no longer be REQUESTED.
+       */
+      await loadAfterSales();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Refund failed.");
     } finally {
@@ -261,11 +280,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
   }
 
   if (loading || (busy && !o)) {
-    return (
-      <main className="mx-auto max-w-6xl px-5 py-16">
-        Loading order…
-      </main>
-    );
+    return <main className="mx-auto max-w-6xl px-5 py-16">Loading order…</main>;
   }
 
   if (!user || !["ADMIN", "STAFF"].includes(user.role)) {
@@ -284,17 +299,60 @@ export default function AdminOrderClient({ id }: { id: string }) {
     );
   }
 
+  /*
+   * -------------------------------------------------------
+   * MANUAL REFUND AVAILABILITY
+   *
+   * Manual Razorpay refunds are available only when there
+   * is an outstanding legacy refund request.
+   *
+   * Product-fault requests use store credit and therefore
+   * must NOT enable the Razorpay refund control.
+   * -------------------------------------------------------
+   */
+
+  const pendingRefundRequests = afterSales
+    .filter(
+      (request) =>
+        request.status === "REQUESTED" &&
+        request.requestType == null &&
+        Number(request.refundAmountInr ?? 0) > 0,
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+  const pendingRefundRequest = pendingRefundRequests[0] || null;
+
+  const requestedRefundAmount = Number(
+    pendingRefundRequest?.refundAmountInr ?? 0,
+  );
+
+  const refundedAmount = o.refunds
+    .filter(
+      (refund: any) =>
+        refund.status === "PENDING" || refund.status === "PROCESSED",
+    )
+    .reduce(
+      (sum: number, refund: any) => sum + Number(refund.amountInr ?? 0),
+      0,
+    );
+
+  const remainingRefundableAmount = Math.max(
+    0,
+    Math.round((requestedRefundAmount - refundedAmount) * 100) / 100,
+  );
+
+  const canIssueManualRefund =
+    o.paymentStatus === "CAPTURED" &&
+    pendingRefundRequest !== null &&
+    remainingRefundableAmount > 0;
+
   const a = o.shippingAddress || {};
 
   const q = encodeURIComponent(
-    [
-      a.line1,
-      a.line2,
-      a.city,
-      a.state,
-      a.postalCode,
-      a.countryCode || "IN",
-    ]
+    [a.line1, a.line2, a.city, a.state, a.postalCode, a.countryCode || "IN"]
       .filter(Boolean)
       .join(", "),
   );
@@ -306,10 +364,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-10 lg:px-8">
-      <Link
-        href="/admin/orders"
-        className="text-sm text-[#8b7a70]"
-      >
+      <Link href="/admin/orders" className="text-sm text-[#8b7a70]">
         ← Orders
       </Link>
 
@@ -346,9 +401,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
         <section className="space-y-6">
           {/* ITEMS */}
           <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
-            <h2 className="font-serif text-2xl text-[#5e473c]">
-              Items
-            </h2>
+            <h2 className="font-serif text-2xl text-[#5e473c]">Items</h2>
 
             {o.items.map((i) => (
               <div
@@ -363,12 +416,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
                   </p>
                 </div>
 
-                <span>
-                  ₹
-                  {Number(i.totalPriceInr).toLocaleString(
-                    "en-IN",
-                  )}
-                </span>
+                <span>₹{Number(i.totalPriceInr).toLocaleString("en-IN")}</span>
               </div>
             ))}
 
@@ -395,9 +443,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
 
               <div className="flex justify-between border-t pt-3 font-medium">
                 <span>Total</span>
-                <span>
-                  ₹{Number(o.totalInr).toLocaleString("en-IN")}
-                </span>
+                <span>₹{Number(o.totalInr).toLocaleString("en-IN")}</span>
               </div>
             </div>
           </div>
@@ -411,16 +457,13 @@ export default function AdminOrderClient({ id }: { id: string }) {
                 </h2>
 
                 <p className="mt-1 text-sm text-[#8b7a70]">
-                  Product-fault and size-replacement requests for
-                  this order.
+                  Product-fault and size-replacement requests for this order.
                 </p>
               </div>
 
               <span className="rounded-full bg-[#f3e7d7] px-3 py-1 text-xs">
                 {afterSales.length}{" "}
-                {afterSales.length === 1
-                  ? "request"
-                  : "requests"}
+                {afterSales.length === 1 ? "request" : "requests"}
               </span>
             </div>
 
@@ -432,8 +475,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
               <div className="mt-6 space-y-5">
                 {afterSales.map((request) => {
                   const item = getItem(request.orderItemId);
-                  const isPending =
-                    request.status === "REQUESTED";
+                  const isPending = request.status === "REQUESTED";
 
                   const isProductFault =
                     request.requestType === "PRODUCT_FAULT";
@@ -458,8 +500,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
                           </div>
 
                           <h3 className="mt-3 font-medium text-[#5e473c]">
-                            {item?.productName ||
-                              "Order item"}
+                            {item?.productName || "Order item"}
                           </h3>
 
                           {item && (
@@ -470,27 +511,21 @@ export default function AdminOrderClient({ id }: { id: string }) {
                         </div>
 
                         <div className="text-right text-sm">
-                          <p className="text-xs text-[#8b7a70]">
-                            Requested
-                          </p>
+                          <p className="text-xs text-[#8b7a70]">Requested</p>
 
                           <p>
-                            {new Date(
-                              request.createdAt,
-                            ).toLocaleString("en-IN")}
+                            {new Date(request.createdAt).toLocaleString(
+                              "en-IN",
+                            )}
                           </p>
                         </div>
                       </div>
 
                       <div className="mt-5 grid gap-3 sm:grid-cols-2">
                         <div className="rounded-xl bg-white p-3">
-                          <p className="text-xs text-[#8b7a70]">
-                            Customer
-                          </p>
+                          <p className="text-xs text-[#8b7a70]">Customer</p>
                           <p className="mt-1 text-sm">
-                            {request.customerEmail ||
-                              o.customerEmail ||
-                              "—"}
+                            {request.customerEmail || o.customerEmail || "-"}
                           </p>
                         </div>
 
@@ -550,18 +585,16 @@ export default function AdminOrderClient({ id }: { id: string }) {
 
                           <p className="mt-1 text-lg font-medium text-green-800">
                             ₹
-                            {Number(
-                              request.approvedCreditInr,
-                            ).toLocaleString("en-IN")}
+                            {Number(request.approvedCreditInr).toLocaleString(
+                              "en-IN",
+                            )}
                           </p>
                         </div>
                       )}
 
                       {request.adminNote && (
                         <div className="mt-4 rounded-xl border border-[#eadfd5] bg-white p-4">
-                          <p className="text-xs text-[#8b7a70]">
-                            Admin note
-                          </p>
+                          <p className="text-xs text-[#8b7a70]">Admin note</p>
 
                           <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
                             {request.adminNote}
@@ -585,14 +618,11 @@ export default function AdminOrderClient({ id }: { id: string }) {
                           <label className="block text-sm">
                             Admin note
                             <textarea
-                              value={
-                                adminNotes[request.id] || ""
-                              }
+                              value={adminNotes[request.id] || ""}
                               onChange={(e) =>
                                 setAdminNotes((current) => ({
                                   ...current,
-                                  [request.id]:
-                                    e.target.value,
+                                  [request.id]: e.target.value,
                                 }))
                               }
                               rows={3}
@@ -610,10 +640,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
                               type="button"
                               disabled={afterSalesBusy}
                               onClick={() =>
-                                void updateAfterSales(
-                                  request,
-                                  "APPROVED",
-                                )
+                                void updateAfterSales(request, "APPROVED")
                               }
                               className="rounded-full bg-[#5e473c] px-5 py-3 text-sm text-white disabled:opacity-50"
                             >
@@ -628,10 +655,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
                               type="button"
                               disabled={afterSalesBusy}
                               onClick={() =>
-                                void updateAfterSales(
-                                  request,
-                                  "REJECTED",
-                                )
+                                void updateAfterSales(request, "REJECTED")
                               }
                               className="rounded-full border border-red-200 bg-white px-5 py-3 text-sm text-red-700 disabled:opacity-50"
                             >
@@ -644,9 +668,9 @@ export default function AdminOrderClient({ id }: { id: string }) {
                       {request.adminReviewedAt && (
                         <p className="mt-4 text-xs text-[#8b7a70]">
                           Reviewed{" "}
-                          {new Date(
-                            request.adminReviewedAt,
-                          ).toLocaleString("en-IN")}
+                          {new Date(request.adminReviewedAt).toLocaleString(
+                            "en-IN",
+                          )}
                         </p>
                       )}
                     </div>
@@ -663,13 +687,8 @@ export default function AdminOrderClient({ id }: { id: string }) {
             </h2>
 
             {o.history.map((h: any, i: number) => (
-              <div
-                key={i}
-                className="border-l border-[#d9cbc0] py-2 pl-4"
-              >
-                <p className="text-sm font-medium">
-                  {h.status}
-                </p>
+              <div key={i} className="border-l border-[#d9cbc0] py-2 pl-4">
+                <p className="text-sm font-medium">{h.status}</p>
 
                 <p className="text-xs text-[#8b7a70]">
                   {new Date(h.createdAt).toLocaleString("en-IN")}
@@ -681,56 +700,183 @@ export default function AdminOrderClient({ id }: { id: string }) {
 
           {/* REFUNDS */}
           <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
-            <h2 className="font-serif text-2xl text-[#5e473c]">
-              Refunds
-            </h2>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-serif text-2xl text-[#5e473c]">Refunds</h2>
+
+                <p className="mt-1 text-sm text-[#8b7a70]">
+                  Razorpay refunds are available only for outstanding refund
+                  requests.
+                </p>
+              </div>
+
+              {pendingRefundRequest && (
+                <span className="rounded-full bg-amber-50 px-3 py-1 text-xs text-amber-800">
+                  Refund requested
+                </span>
+              )}
+            </div>
 
             {o.refunds.length ? (
-              o.refunds.map((r: any) => (
-                <div
-                  key={r.id}
-                  className="flex justify-between border-b py-3 text-sm"
-                >
-                  <span>
-                    {r.refundId || "Refund"} · {r.status}
-                  </span>
+              <div className="mt-5">
+                {o.refunds.map((r: any) => (
+                  <div
+                    key={r.id}
+                    className="flex flex-wrap justify-between gap-3 border-b border-[#f0e8e2] py-3 text-sm"
+                  >
+                    <div>
+                      <p className="font-medium">{r.refundId || "Refund"}</p>
 
-                  <strong>₹{r.amountInr}</strong>
-                </div>
-              ))
+                      <p className="text-xs text-[#8b7a70]">
+                        {r.status}
+                        {r.createdAt
+                          ? ` · ${new Date(r.createdAt).toLocaleString(
+                              "en-IN",
+                            )}`
+                          : ""}
+                      </p>
+
+                      {r.reason && (
+                        <p className="mt-1 text-xs text-[#8b7a70]">
+                          {r.reason}
+                        </p>
+                      )}
+                    </div>
+
+                    <strong>
+                      ₹
+                      {Number(r.amountInr).toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </strong>
+                  </div>
+                ))}
+
+                {refundedAmount > 0 && (
+                  <div className="mt-4 flex justify-between text-sm">
+                    <span className="text-[#8b7a70]">Already refunded</span>
+
+                    <span className="font-medium">
+                      ₹
+                      {refundedAmount.toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                )}
+              </div>
             ) : (
-              <p className="mt-3 text-sm text-[#8b7a70]">
+              <p className="mt-5 rounded-xl bg-[#fffaf4] p-4 text-sm text-[#8b7a70]">
                 No refunds yet.
               </p>
             )}
 
-            {o.paymentStatus === "CAPTURED" && (
-              <div className="mt-5 grid gap-3">
-                <input
-                  type="number"
-                  value={refund}
-                  onChange={(e) => setRefund(e.target.value)}
-                  placeholder="Refund amount"
-                  className="rounded-xl border border-[#d9cbc0] px-3 py-3"
-                />
+            {/* -------------------------------------------------
+                PENDING REFUND REQUEST
+            ------------------------------------------------- */}
+            {pendingRefundRequest && (
+              <div className="mt-5 rounded-2xl border border-[#eadfd5] bg-[#fffaf4] p-4">
+                <div className="flex justify-between gap-4 text-sm">
+                  <span className="text-[#8b7a70]">Requested refund</span>
 
-                <input
-                  value={refundReason}
-                  onChange={(e) =>
-                    setRefundReason(e.target.value)
-                  }
-                  className="rounded-xl border border-[#d9cbc0] px-3 py-3"
-                />
+                  <strong>
+                    ₹
+                    {requestedRefundAmount.toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </strong>
+                </div>
 
-                <button
-                  disabled={busy}
-                  onClick={() => void doRefund()}
-                  className="rounded-full border border-red-200 px-5 py-3 text-red-700 disabled:opacity-50"
-                >
-                  Issue Razorpay refund
-                </button>
+                <div className="mt-2 flex justify-between gap-4 text-sm">
+                  <span className="text-[#8b7a70]">Already refunded</span>
+
+                  <span>
+                    ₹
+                    {refundedAmount.toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex justify-between gap-4 border-t border-[#eadfd5] pt-3 text-sm font-medium text-[#5e473c]">
+                  <span>Remaining refundable</span>
+
+                  <span>
+                    ₹
+                    {remainingRefundableAmount.toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
               </div>
             )}
+
+            {/* -------------------------------------------------
+                MANUAL RAZORPAY REFUND
+            ------------------------------------------------- */}
+            <div className="mt-5 grid gap-3">
+              <input
+                type="number"
+                min="0"
+                max={
+                  canIssueManualRefund ? remainingRefundableAmount : undefined
+                }
+                step="0.01"
+                value={refund}
+                onChange={(e) => setRefund(e.target.value)}
+                placeholder={
+                  canIssueManualRefund
+                    ? `Maximum ₹${remainingRefundableAmount.toLocaleString(
+                        "en-IN",
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        },
+                      )}`
+                    : "Refund unavailable"
+                }
+                disabled={!canIssueManualRefund || busy}
+                className="rounded-xl border border-[#d9cbc0] px-3 py-3 disabled:cursor-not-allowed disabled:bg-[#f5f0eb] disabled:text-[#9b8e86]"
+              />
+
+              <input
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                disabled={!canIssueManualRefund || busy}
+                className="rounded-xl border border-[#d9cbc0] px-3 py-3 disabled:cursor-not-allowed disabled:bg-[#f5f0eb] disabled:text-[#9b8e86]"
+              />
+
+              <button
+                type="button"
+                disabled={!canIssueManualRefund || busy}
+                onClick={() => void doRefund()}
+                className="rounded-full border border-red-200 px-5 py-3 text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {busy
+                  ? "Processing…"
+                  : canIssueManualRefund
+                    ? "Issue Razorpay refund"
+                    : "Refund unavailable"}
+              </button>
+
+              {!pendingRefundRequest && (
+                <p className="text-xs leading-5 text-[#8b7a70]">
+                  A manual Razorpay refund can only be issued when there is an
+                  outstanding refund request for this order.
+                </p>
+              )}
+
+              {pendingRefundRequest && remainingRefundableAmount <= 0 && (
+                <p className="text-xs leading-5 text-green-700">
+                  This refund request has already been fully refunded.
+                </p>
+              )}
+            </div>
           </div>
 
           {/* DELIVERY ADDRESS */}
@@ -743,19 +889,16 @@ export default function AdminOrderClient({ id }: { id: string }) {
               {a.recipientName}
               <br />
               {a.line1}
-
               {a.line2 && (
                 <>
                   <br />
                   {a.line2}
                 </>
               )}
-
               <br />
               {a.city}, {a.state} {a.postalCode}
               <br />
               {a.countryCode || "IN"}
-
               {a.phone && (
                 <>
                   <br />
@@ -777,27 +920,50 @@ export default function AdminOrderClient({ id }: { id: string }) {
 
         {/* FULFILLMENT */}
         <aside className="h-fit rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6">
-          <h2 className="font-serif text-2xl text-[#5e473c]">
-            Fulfillment
-          </h2>
+          <h2 className="font-serif text-2xl text-[#5e473c]">Fulfillment</h2>
 
           <label className="mt-5 block text-sm">
-            Status
-
+            Order status
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value)}
               className="mt-2 w-full rounded-xl border border-[#d9cbc0] bg-white px-3 py-3"
             >
-              {statuses.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
+              <option value="PROCESSING">Processing</option>
+              <option value="SHIPPED">Shipped</option>
+              <option value="DELIVERED">Delivered</option>
+              <option value="CANCELLED">Cancelled</option>
             </select>
           </label>
 
+          <div className="mt-5">
+            <p className="text-sm">Payment status</p>
+
+            <div className="mt-2 rounded-xl border border-[#d9cbc0] bg-[#f8f1eb] px-3 py-3 text-sm font-medium text-[#5e473c]">
+              {o.paymentStatus === "REFUND_PENDING"
+                ? "Refund pending"
+                : o.paymentStatus === "REFUNDED"
+                  ? "Refunded"
+                  : o.paymentStatus === "REFUND_FAILED"
+                    ? "Refund failed"
+                    : o.paymentStatus === "PARTIALLY_REFUNDED"
+                      ? "Partially refunded"
+                      : o.paymentStatus === "CAPTURED"
+                        ? "Captured"
+                        : o.paymentStatus === "PAYMENT_FAILED"
+                          ? "Payment failed"
+                          : o.paymentStatus === "PAYMENT_EXPIRED"
+                            ? "Payment expired"
+                            : o.paymentStatus}
+            </div>
+
+            <p className="mt-2 text-xs leading-5 text-[#8b7a70]">
+              Payment and refund status are managed automatically.
+            </p>
+          </div>
+
           <label className="mt-4 block text-sm">
             Carrier
-
             <input
               value={carrier}
               onChange={(e) => setCarrier(e.target.value)}
@@ -807,19 +973,15 @@ export default function AdminOrderClient({ id }: { id: string }) {
 
           <label className="mt-4 block text-sm">
             Tracking number
-
             <input
               value={trackingNumber}
-              onChange={(e) =>
-                setTrackingNumber(e.target.value)
-              }
+              onChange={(e) => setTrackingNumber(e.target.value)}
               className="mt-2 w-full rounded-xl border border-[#d9cbc0] bg-white px-3 py-3"
             />
           </label>
 
           <label className="mt-4 block text-sm">
             Tracking URL
-
             <input
               value={trackingUrl}
               onChange={(e) => setTrackingUrl(e.target.value)}
@@ -829,7 +991,6 @@ export default function AdminOrderClient({ id }: { id: string }) {
 
           <label className="mt-4 block text-sm">
             Internal note
-
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}

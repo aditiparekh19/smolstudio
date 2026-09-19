@@ -6,10 +6,21 @@ import { useAuth } from "../../../components/AuthProvider";
 import { apiClient } from "../../../lib/graphql";
 import { myStoreCreditQuery } from "../../../lib/orders";
 
+type StoreCreditTransaction = {
+  id: string;
+  type: string;
+  amountInr: number;
+  balanceAfterInr: number;
+  orderId: string | null;
+  description: string | null;
+  createdAt: string;
+};
+
 type StoreCredit = {
   balanceInr: number;
   reservedInr: number;
   availableInr: number;
+  transactions: StoreCreditTransaction[];
 };
 
 export default function StoreCreditPage() {
@@ -48,9 +59,7 @@ export default function StoreCreditPage() {
 
   if (authLoading) {
     return (
-      <main className="mx-auto max-w-4xl px-5 py-16">
-        Loading account…
-      </main>
+      <main className="mx-auto max-w-4xl px-5 py-16">Loading account…</main>
     );
   }
 
@@ -85,9 +94,7 @@ export default function StoreCreditPage() {
         Account
       </p>
 
-      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">
-        Store credit
-      </h1>
+      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Store credit</h1>
 
       <p className="mt-4 max-w-xl text-[#8b7a70]">
         Store credit can be used toward your future SmolStudio orders.
@@ -95,9 +102,7 @@ export default function StoreCreditPage() {
 
       {loading && (
         <div className="mt-10 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-7">
-          <p className="text-sm text-[#8b7a70]">
-            Loading your store credit…
-          </p>
+          <p className="text-sm text-[#8b7a70]">Loading your store credit…</p>
         </div>
       )}
 
@@ -115,7 +120,8 @@ export default function StoreCreditPage() {
             </p>
 
             <p className="mt-3 font-serif text-5xl text-[#5e473c]">
-              ₹{credit.availableInr.toLocaleString("en-IN", {
+              ₹
+              {credit.availableInr.toLocaleString("en-IN", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
@@ -133,15 +139,16 @@ export default function StoreCreditPage() {
               </p>
 
               <p className="mt-2 text-2xl text-[#5e473c]">
-                ₹{credit.reservedInr.toLocaleString("en-IN", {
+                ₹
+                {credit.reservedInr.toLocaleString("en-IN", {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}
               </p>
 
               <p className="mt-2 text-sm leading-6 text-[#8b7a70]">
-                This amount is temporarily reserved for a pending payment and
-                is not currently available to use.
+                This amount is temporarily reserved for a pending payment and is
+                not currently available to use.
               </p>
             </section>
           )}
@@ -152,12 +159,11 @@ export default function StoreCreditPage() {
             </p>
 
             <div className="mt-4 flex items-center justify-between gap-5">
-              <span className="text-sm text-[#8b7a70]">
-                Total store credit
-              </span>
+              <span className="text-sm text-[#8b7a70]">Total store credit</span>
 
               <span className="text-sm font-medium text-[#332c28]">
-                ₹{credit.balanceInr.toLocaleString("en-IN", {
+                ₹
+                {credit.balanceInr.toLocaleString("en-IN", {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}
@@ -171,7 +177,8 @@ export default function StoreCreditPage() {
                 </span>
 
                 <span className="text-sm text-[#332c28]">
-                  − ₹{credit.reservedInr.toLocaleString("en-IN", {
+                  − ₹
+                  {credit.reservedInr.toLocaleString("en-IN", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
@@ -186,13 +193,99 @@ export default function StoreCreditPage() {
                 </span>
 
                 <span className="text-lg font-medium text-[#5e473c]">
-                  ₹{credit.availableInr.toLocaleString("en-IN", {
+                  ₹
+                  {credit.availableInr.toLocaleString("en-IN", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
                 </span>
               </div>
             </div>
+          </section>
+
+          <section className="rounded-[2rem] border border-[#eadfd5] bg-white p-7">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-[#8b7a70]">
+                  Activity
+                </p>
+
+                <h2 className="mt-2 font-serif text-2xl text-[#5e473c]">
+                  Transaction history
+                </h2>
+              </div>
+            </div>
+
+            {credit.transactions.length === 0 ? (
+              <p className="mt-6 text-sm leading-6 text-[#8b7a70]">
+                No store credit transactions yet.
+              </p>
+            ) : (
+              <div className="mt-6 divide-y divide-[#eadfd5]">
+                {credit.transactions.map((transaction) => {
+                  const isCredit = transaction.amountInr > 0;
+
+                  return (
+                    <div
+                      key={transaction.id}
+                      className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-[#332c28]">
+                          {transaction.description
+                            ? transaction.description
+                            : transaction.type
+                                .replace(/_/g, " ")
+                                .replace(/\b\w/g, (char) => char.toUpperCase())}
+                        </p>
+
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#8b7a70]">
+                          <span>
+                            {new Date(transaction.createdAt).toLocaleDateString(
+                              "en-IN",
+                              {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              },
+                            )}
+                          </span>
+
+                          {transaction.orderId && (
+                            <span>Order #{transaction.orderId}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-left sm:text-right">
+                        <p
+                          className={`text-sm font-medium ${
+                            isCredit ? "text-green-700" : "text-[#5e473c]"
+                          }`}
+                        >
+                          {isCredit ? "+" : "−"} ₹
+                          {Math.abs(transaction.amountInr).toLocaleString(
+                            "en-IN",
+                            {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            },
+                          )}
+                        </p>
+
+                        <p className="mt-1 text-xs text-[#8b7a70]">
+                          Balance ₹
+                          {transaction.balanceAfterInr.toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <div className="flex flex-wrap gap-3 pt-2">

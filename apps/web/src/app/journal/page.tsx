@@ -34,7 +34,7 @@ const postcards = [
     number: "06",
     category: "Little guides",
     title: "Made for little movement",
-    text: "Stretching, kicking, rolling, sleeping and discovering — babies are always moving. Their clothes should move with them, not get in the way.",
+    text: "Stretching, kicking, rolling, sleeping and discovering - babies are always moving. Their clothes should move with them, not get in the way.",
   },
 ];
 export default function JournalPage() {
@@ -93,10 +93,6 @@ export default function JournalPage() {
                   {" "}
                   {postcard.text}{" "}
                 </p>{" "}
-                <div className="mt-6 text-xs font-medium tracking-wide text-[#8b776b] transition-colors group-hover:text-[#5e473c]">
-                  {" "}
-                  Read the note <span className="ml-1">→</span>{" "}
-                </div>{" "}
               </div>{" "}
             </article>
           ))}{" "}
@@ -123,7 +119,7 @@ export default function JournalPage() {
               className="mt-7 inline-flex rounded-full bg-[#5e473c] px-6 py-3 text-sm text-white transition-colors hover:bg-[#49372f]"
             >
               {" "}
-              Shop the edit{" "}
+              Shop the collection{" "}
             </Link>{" "}
           </div>{" "}
         </div>{" "}

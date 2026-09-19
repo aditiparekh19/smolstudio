@@ -103,7 +103,7 @@ export default async function Home({
                   hover:bg-[#4d392f]
                 "
               >
-                Shop the edit
+                Shop the collection
               </a>
 
               <a
@@ -350,7 +350,7 @@ export default async function Home({
         <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b7a70]">
-              The edit
+              The collection
             </p>
 
             <h2 className="mt-2 font-serif text-4xl tracking-[-0.03em] text-[#5e473c]">

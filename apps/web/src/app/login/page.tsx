@@ -23,7 +23,9 @@ export default function LoginPage() {
       router.refresh();
     } catch (e) {
       setPassword("");
-      setError('Invalid email or password. Please check your credentials and try again.');
+      setError(
+        "Invalid email or password. Please check your credentials and try again.",
+      );
     } finally {
       setBusy(false);
     }
@@ -59,6 +61,11 @@ export default function LoginPage() {
             className="mt-2 w-full rounded-xl border border-[#d9cbc0] bg-white px-4 py-3 outline-none"
           />
         </label>
+        <p className="text-right text-sm text-[#8b7a70]">
+          <Link href="/forgot-password" className="text-[#5e473c] underline">
+            Forgot password?
+          </Link>
+        </p>
         {error && <p className="text-sm text-red-700">{error}</p>}
         <button
           disabled={busy}

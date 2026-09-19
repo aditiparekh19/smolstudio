@@ -37,6 +37,9 @@ export default function AccountPage() {
     );
   }
 
+  const isAdmin =
+    user.role === "ADMIN" || user.role === "STAFF";
+
   return (
     <main className="mx-auto max-w-4xl px-5 py-16">
       <p className="text-xs uppercase tracking-[0.2em] text-[#8b7a70]">
@@ -56,57 +59,63 @@ export default function AccountPage() {
           {user.email}
         </p>
 
-        <p className="mt-4 text-xs uppercase tracking-[0.16em] text-[#8b7a70]">
-          Role
-        </p>
+        {isAdmin && (
+          <>
+            <p className="mt-4 text-xs uppercase tracking-[0.16em] text-[#8b7a70]">
+              Role
+            </p>
 
-        <p className="mt-1 text-sm text-[#332c28]">
-          {user.role}
-        </p>
+            <p className="mt-1 text-sm text-[#332c28]">
+              {user.role}
+            </p>
+          </>
+        )}
 
         <div className="mt-7 flex flex-wrap gap-3">
-          <Link
-            href="/account/addresses"
-            className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
-          >
-            Saved addresses
-          </Link>
-
-          <Link
-            href="/account/returns"
-            className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
-          >
-            Returns
-          </Link>
-
-          <Link
-            href="/account/orders"
-            className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
-          >
-            Order history
-          </Link>
-
-          <Link
-            href="/account/store-credit"
-            className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
-          >
-            Store credit
-          </Link>
-
-          <Link
-            href="/cart"
-            className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
-          >
-            View bag
-          </Link>
-
-          {(user.role === "ADMIN" || user.role === "STAFF") && (
+          {isAdmin ? (
             <Link
               href="/admin"
-              className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+              className="rounded-full bg-[#5e473c] px-5 py-3 text-sm text-white"
             >
               Admin dashboard
             </Link>
+          ) : (
+            <>
+              <Link
+                href="/account/addresses"
+                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+              >
+                Saved addresses
+              </Link>
+
+              <Link
+                href="/account/returns"
+                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+              >
+                Returns
+              </Link>
+
+              <Link
+                href="/account/orders"
+                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+              >
+                Order history
+              </Link>
+
+              <Link
+                href="/account/store-credit"
+                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+              >
+                Store credit
+              </Link>
+
+              <Link
+                href="/cart"
+                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+              >
+                View bag
+              </Link>
+            </>
           )}
 
           <button
@@ -116,7 +125,7 @@ export default function AccountPage() {
               router.push("/");
               router.refresh();
             }}
-            className="rounded-full bg-[#5e473c] px-5 py-3 text-sm text-white"
+            className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
           >
             Logout
           </button>

@@ -148,9 +148,7 @@ export async function listAdminOrders(search?: string, status?: string) {
         createdAt: new Date(row.createdAt).toISOString(),
         updatedAt: new Date(row.updatedAt).toISOString(),
 
-        shippedAt: row.shippedAt
-          ? new Date(row.shippedAt).toISOString()
-          : null,
+        shippedAt: row.shippedAt ? new Date(row.shippedAt).toISOString() : null,
 
         deliveredAt: row.deliveredAt
           ? new Date(row.deliveredAt).toISOString()
@@ -288,9 +286,7 @@ export async function getAdminOrder(id: string) {
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
 
-    shippedAt: row.shippedAt
-      ? new Date(row.shippedAt).toISOString()
-      : null,
+    shippedAt: row.shippedAt ? new Date(row.shippedAt).toISOString() : null,
 
     deliveredAt: row.deliveredAt
       ? new Date(row.deliveredAt).toISOString()
@@ -410,7 +406,138 @@ export async function adminRefundOrder(
   amountInr: number,
   reason: string,
 ) {
-  return refundPayment(orderId, amountInr, reason || "Admin refund");
+  const pool = await getDb();
+
+  const order = (
+    await pool
+      .request()
+      .input("orderId", orderId)
+      .query<any>(
+        `
+        SELECT TOP 1
+          id,
+          status,
+          payment_status paymentStatus,
+          payment_provider paymentProvider,
+          payment_reference paymentReference,
+          CAST(total_inr AS decimal(12,2)) totalInr,
+          CAST(
+            COALESCE(store_credit_applied_inr, 0)
+            AS decimal(12,2)
+          ) storeCreditAppliedInr
+        FROM orders
+        WHERE id=@orderId
+        `,
+      )
+  ).recordset[0];
+
+  if (!order) {
+    throw new Error("Order not found.");
+  }
+
+  const refundRequest = (
+    await pool
+      .request()
+      .input("orderId", orderId)
+      .query<any>(
+        `
+        SELECT TOP 1
+          id,
+          status,
+          CAST(
+            COALESCE(refund_amount_inr, 0)
+            AS decimal(12,2)
+          ) refundAmountInr
+        FROM return_requests
+        WHERE order_id=@orderId
+          AND status='REQUESTED'
+          AND request_type IS NULL
+          AND refund_amount_inr IS NOT NULL
+          AND refund_amount_inr > 0
+        ORDER BY created_at DESC
+        `,
+      )
+  ).recordset[0];
+
+  if (!refundRequest) {
+    throw new Error("No pending refund request exists for this order.");
+  }
+
+  if (
+    order.paymentProvider !== "RAZORPAY" ||
+    !["CAPTURED", "PARTIALLY_REFUNDED"].includes(order.paymentStatus) ||
+    !order.paymentReference
+  ) {
+    throw new Error("This order does not have a refundable Razorpay payment.");
+  }
+
+  const refundTotals = (
+    await pool
+      .request()
+      .input("orderId", orderId)
+      .query<any>(
+        `
+        SELECT
+          CAST(
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN status IN ('PENDING', 'PROCESSED')
+                  THEN amount_inr
+                  ELSE 0
+                END
+              ),
+              0
+            )
+            AS decimal(12,2)
+          ) refundedInr
+        FROM payment_refunds
+        WHERE order_id=@orderId
+        `,
+      )
+  ).recordset[0];
+
+  const razorpayPaidAmount = Math.max(
+    0,
+    Number(order.totalInr ?? 0) - Number(order.storeCreditAppliedInr ?? 0),
+  );
+
+  const alreadyRefunded = Number(refundTotals?.refundedInr ?? 0);
+
+  const razorpayRemaining = Math.max(0, razorpayPaidAmount - alreadyRefunded);
+
+  const requestedRefundAmount = Number(refundRequest.refundAmountInr ?? 0);
+
+  const requestRemaining = Math.max(0, requestedRefundAmount - alreadyRefunded);
+
+  const remainingRefundable = Math.max(
+    0,
+    Math.round(Math.min(razorpayRemaining, requestRemaining) * 100) / 100,
+  );
+
+  if (remainingRefundable <= 0) {
+    throw new Error("This refund request has already been fully refunded.");
+  }
+
+  const requestedAmount = Math.round(Number(amountInr) * 100) / 100;
+
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+    throw new Error("Refund amount must be greater than zero.");
+  }
+
+  if (requestedAmount > remainingRefundable) {
+    throw new Error(
+      `Refund amount cannot exceed the remaining refundable amount of ₹${remainingRefundable.toFixed(
+        2,
+      )}.`,
+    );
+  }
+
+  return refundPayment(
+    orderId,
+    requestedAmount,
+    reason?.trim() || "Admin refund",
+  );
 }
 
 /* =========================================================
@@ -630,10 +757,8 @@ export async function getAdminCustomer(id: string) {
 export async function adminDashboardStats() {
   const pool = await getDb();
 
-  const r = await pool
-    .request()
-    .query<any>(
-      `SELECT
+  const r = await pool.request().query<any>(
+    `SELECT
         (SELECT COUNT(*) FROM products) productCount,
 
         (SELECT COUNT(*)
@@ -678,7 +803,7 @@ export async function adminDashboardStats() {
            ON i.variant_id=v.id
          WHERE p.is_active=1
            AND i.quantity_available-i.quantity_reserved<=0) outOfStockCount`,
-    );
+  );
 
   return {
     ...r.recordset[0],
@@ -701,10 +826,8 @@ export async function listCategoriesAdmin() {
   const pool = await getDb();
 
   return (
-    await pool
-      .request()
-      .query<any>(
-        `SELECT
+    await pool.request().query<any>(
+      `SELECT
           id,
           slug,
           name,
@@ -712,7 +835,7 @@ export async function listCategoriesAdmin() {
           is_active isActive
         FROM categories
         ORDER BY sort_order,name`,
-      )
+    )
   ).recordset.map((x: any) => ({
     ...x,
     isActive: Boolean(x.isActive),
@@ -836,10 +959,8 @@ export async function listCoupons() {
   const pool = await getDb();
 
   return (
-    await pool
-      .request()
-      .query<any>(
-        `SELECT
+    await pool.request().query<any>(
+      `SELECT
           id,
           code,
           discount_type discountType,
@@ -853,15 +974,13 @@ export async function listCoupons() {
           is_active isActive
         FROM coupons
         ORDER BY starts_at DESC`,
-      )
+    )
   ).recordset.map((x: any) => ({
     ...x,
     discountValue: Number(x.discountValue ?? 0),
     minOrderInr: Number(x.minOrderInr ?? 0),
-    maxDiscountInr:
-      x.maxDiscountInr == null ? null : Number(x.maxDiscountInr),
-    maxRedemptions:
-      x.maxRedemptions == null ? null : Number(x.maxRedemptions),
+    maxDiscountInr: x.maxDiscountInr == null ? null : Number(x.maxDiscountInr),
+    maxRedemptions: x.maxRedemptions == null ? null : Number(x.maxRedemptions),
     redeemedCount: Number(x.redeemedCount ?? 0),
     isActive: Boolean(x.isActive),
     startsAt: new Date(x.startsAt).toISOString(),
@@ -879,9 +998,7 @@ export async function saveCoupon(input: any) {
     !["PERCENT", "FIXED"].includes(input.discountType) ||
     Number(input.discountValue) <= 0
   ) {
-    throw new Error(
-      "Valid coupon code, type and discount are required.",
-    );
+    throw new Error("Valid coupon code, type and discount are required.");
   }
 
   const pool = await getDb();
@@ -1065,29 +1182,16 @@ export async function listReturnRequests(status?: string) {
     ...x,
 
     refundAmountInr:
-      x.refundAmountInr == null
-        ? null
-        : Number(x.refundAmountInr),
+      x.refundAmountInr == null ? null : Number(x.refundAmountInr),
 
     approvedCreditInr:
-      x.approvedCreditInr == null
-        ? null
-        : Number(x.approvedCreditInr),
+      x.approvedCreditInr == null ? null : Number(x.approvedCreditInr),
 
-    unitPriceInr:
-      x.unitPriceInr == null
-        ? null
-        : Number(x.unitPriceInr),
+    unitPriceInr: x.unitPriceInr == null ? null : Number(x.unitPriceInr),
 
-    totalPriceInr:
-      x.totalPriceInr == null
-        ? null
-        : Number(x.totalPriceInr),
+    totalPriceInr: x.totalPriceInr == null ? null : Number(x.totalPriceInr),
 
-    quantity:
-      x.quantity == null
-        ? null
-        : Number(x.quantity),
+    quantity: x.quantity == null ? null : Number(x.quantity),
 
     createdAt: new Date(x.createdAt).toISOString(),
 
@@ -1156,9 +1260,7 @@ async function ensureStoreCreditAccount(
     if (
       error?.number === 2627 ||
       error?.number === 2601 ||
-      String(error?.message ?? "").includes(
-        "UQ_store_credit_accounts_customer",
-      )
+      String(error?.message ?? "").includes("UQ_store_credit_accounts_customer")
     ) {
       const createdByOtherRequest = await pool
         .request()
@@ -1209,13 +1311,9 @@ async function addStoreCredit(
     throw new Error("Store credit amount must be greater than zero.");
   }
 
-  const account = await ensureStoreCreditAccount(
-    pool,
-    customerId,
-  );
+  const account = await ensureStoreCreditAccount(pool, customerId);
 
-  const newBalance =
-    Math.round((account.balanceInr + amount) * 100) / 100;
+  const newBalance = Math.round((account.balanceInr + amount) * 100) / 100;
 
   await pool
     .request()
@@ -1302,11 +1400,7 @@ export async function updateReturnRequest(
     .trim()
     .toUpperCase();
 
-  if (
-    !["APPROVED", "REJECTED", "CANCELLED"].includes(
-      normalizedStatus,
-    )
-  ) {
+  if (!["APPROVED", "REJECTED", "CANCELLED"].includes(normalizedStatus)) {
     throw new Error("Invalid return status.");
   }
 
@@ -1330,6 +1424,9 @@ export async function updateReturnRequest(
           r.status currentStatus,
 
           o.status orderStatus,
+          o.payment_status paymentStatus,
+          o.payment_provider paymentProvider,
+          o.payment_reference paymentReference,
 
           oi.product_name productName,
           oi.sku,
@@ -1365,10 +1462,7 @@ export async function updateReturnRequest(
      REJECT / CANCEL
   ------------------------------------------------------- */
 
-  if (
-    normalizedStatus === "REJECTED" ||
-    normalizedStatus === "CANCELLED"
-  ) {
+  if (normalizedStatus === "REJECTED" || normalizedStatus === "CANCELLED") {
     await pool
       .request()
       .input("id", id)
@@ -1390,29 +1484,123 @@ export async function updateReturnRequest(
   }
 
   /* -------------------------------------------------------
-     LEGACY RETURN
-     
+     LEGACY RETURN / RAZORPAY REFUND
+
      requestType IS NULL means this is one of the old
      return/refund requests.
+
+     IMPORTANT:
+     If an admin has already issued a partial manual refund
+     against this request, only the remaining amount is
+     refunded here. This prevents duplicate Razorpay refunds.
   ------------------------------------------------------- */
 
   if (!requestType) {
-    const amount =
-      r.refundAmountInr == null
-        ? 0
-        : Number(r.refundAmountInr);
+    const requestedRefundAmount =
+      r.refundAmountInr == null ? 0 : Number(r.refundAmountInr);
 
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(requestedRefundAmount) || requestedRefundAmount <= 0) {
+      throw new Error("This legacy return has no valid refund amount.");
+    }
+
+    if (r.paymentProvider !== "RAZORPAY" || !r.paymentReference) {
       throw new Error(
-        "This legacy return has no valid refund amount.",
+        "This order does not have a refundable Razorpay payment.",
       );
     }
 
+    if (
+      !["CAPTURED", "PARTIALLY_REFUNDED"].includes(
+        String(r.paymentStatus || "").toUpperCase(),
+      )
+    ) {
+      throw new Error(
+        "This order does not have a refundable Razorpay payment.",
+      );
+    }
+
+    /* -----------------------------------------------------
+       Find refunds already issued for this order.
+
+       PENDING refunds are included because Razorpay may have
+       accepted the refund while processing is still pending.
+    ----------------------------------------------------- */
+
+    const refundTotals = (
+      await pool
+        .request()
+        .input("orderId", r.orderId)
+        .query<any>(
+          `
+          SELECT
+            CAST(
+              COALESCE(
+                SUM(
+                  CASE
+                    WHEN status IN ('PENDING', 'PROCESSED')
+                    THEN amount_inr
+                    ELSE 0
+                  END
+                ),
+                0
+              )
+              AS decimal(12,2)
+            ) refundedInr
+          FROM payment_refunds
+          WHERE order_id=@orderId
+          `,
+        )
+    ).recordset[0];
+
+    const alreadyRefunded = Number(refundTotals?.refundedInr ?? 0);
+
+    const remainingRefundAmount = Math.max(
+      0,
+      Math.round((requestedRefundAmount - alreadyRefunded) * 100) / 100,
+    );
+
+    /* -----------------------------------------------------
+       If the entire requested amount was already refunded
+       manually, do NOT call Razorpay again.
+
+       Simply complete the return request.
+    ----------------------------------------------------- */
+
+    if (remainingRefundAmount <= 0) {
+      await pool
+        .request()
+        .input("id", id)
+        .input("status", normalizedStatus)
+        .input("note", note)
+        .input("adminId", adminId || null)
+        .query(
+          `UPDATE return_requests
+           SET
+             status=@status,
+             admin_note=@note,
+             admin_reviewed_at=SYSUTCDATETIME(),
+             admin_reviewed_by=@adminId,
+             updated_at=SYSUTCDATETIME()
+           WHERE id=@id`,
+        );
+
+      return true;
+    }
+
+    /* -----------------------------------------------------
+       Refund ONLY the remaining amount.
+    ----------------------------------------------------- */
+
     await refundPayment(
       r.orderId,
-      amount,
+      remainingRefundAmount,
       note || "Approved return",
     );
+
+    /* -----------------------------------------------------
+       Mark the return request approved only after the
+       Razorpay refund succeeds.
+    ----------------------------------------------------- */
 
     await pool
       .request()
@@ -1436,9 +1624,9 @@ export async function updateReturnRequest(
 
   /* -------------------------------------------------------
      PRODUCT FAULT
-     
+
      APPROVED => STORE CREDIT
-     
+
      We deliberately calculate the actual paid amount
      again at approval time rather than trusting a value
      supplied by the browser.
@@ -1446,9 +1634,7 @@ export async function updateReturnRequest(
 
   if (requestType === "PRODUCT_FAULT") {
     if (!r.orderItemId) {
-      throw new Error(
-        "Product-fault request is missing its order item.",
-      );
+      throw new Error("Product-fault request is missing its order item.");
     }
 
     const paidAmount = await calculateOrderItemPaidAmount(
@@ -1457,9 +1643,7 @@ export async function updateReturnRequest(
     );
 
     if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
-      throw new Error(
-        "Unable to calculate the paid amount for this item.",
-      );
+      throw new Error("Unable to calculate the paid amount for this item.");
     }
 
     const credit = await addStoreCredit(
@@ -1495,18 +1679,16 @@ export async function updateReturnRequest(
 
   /* -------------------------------------------------------
      SIZE REPLACEMENT
-     
+
      APPROVED => replacement request approved.
-     
+
      The replacement variant was validated when the
      customer submitted the request.
   ------------------------------------------------------- */
 
   if (requestType === "SIZE_REPLACEMENT") {
     if (!r.orderItemId) {
-      throw new Error(
-        "Size-replacement request is missing its order item.",
-      );
+      throw new Error("Size-replacement request is missing its order item.");
     }
 
     if (!r.replacementVariantId) {
@@ -1525,7 +1707,10 @@ export async function updateReturnRequest(
             v.product_id productId,
             v.sku,
             CAST(
-              COALESCE(i.quantity_available - i.quantity_reserved, 0)
+              COALESCE(
+                i.quantity_available - i.quantity_reserved,
+                0
+              )
               AS int
             ) availableQuantity
 
@@ -1539,14 +1724,10 @@ export async function updateReturnRequest(
     ).recordset[0];
 
     if (!replacement) {
-      throw new Error(
-        "Replacement variant no longer exists.",
-      );
+      throw new Error("Replacement variant no longer exists.");
     }
 
-    if (
-      Number(replacement.availableQuantity ?? 0) <= 0
-    ) {
+    if (Number(replacement.availableQuantity ?? 0) <= 0) {
       throw new Error(
         "The requested replacement size is currently out of stock.",
       );
@@ -1572,19 +1753,14 @@ export async function updateReturnRequest(
     return true;
   }
 
-  throw new Error(
-    `Unsupported after-sales request type: ${requestType}`,
-  );
+  throw new Error(`Unsupported after-sales request type: ${requestType}`);
 }
 
 /* =========================================================
    ADDRESSES
 ========================================================= */
 
-export async function saveAddress(
-  customerId: string,
-  input: any,
-) {
+export async function saveAddress(customerId: string, input: any) {
   if (
     !input.recipientName ||
     !input.line1 ||
@@ -1592,9 +1768,7 @@ export async function saveAddress(
     !input.state ||
     !input.postalCode
   ) {
-    throw new Error(
-      "Complete address details are required.",
-    );
+    throw new Error("Complete address details are required.");
   }
 
   const pool = await getDb();
@@ -1702,10 +1876,7 @@ export async function listAddresses(customerId: string) {
   ).recordset;
 }
 
-export async function deleteAddress(
-  customerId: string,
-  id: string,
-) {
+export async function deleteAddress(customerId: string, id: string) {
   const pool = await getDb();
 
   await pool

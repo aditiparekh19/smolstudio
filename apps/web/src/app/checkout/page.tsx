@@ -444,7 +444,7 @@ export default function CheckoutPage() {
 
                 {addresses.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.label || a.recipientName} — {a.city}
+                    {a.label || a.recipientName} - {a.city}
                   </option>
                 ))}
               </select>

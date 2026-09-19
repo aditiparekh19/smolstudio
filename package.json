@@ -2,7 +2,7 @@
   "name": "smolstudio",
   "private": true,
   "version": "0.1.0",
-  "description": "SmolStudio commerce platform — Next.js + Fastify + GraphQL + SQL Server",
+  "description": "SmolStudio commerce platform - Next.js + Fastify + GraphQL + SQL Server",
   "workspaces": ["apps/*"],
   "scripts": {
     "dev": "concurrently -n web,api -c magenta,cyan \"npm:dev:web\" \"npm:dev:api\"",

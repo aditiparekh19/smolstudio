@@ -18,7 +18,7 @@ export function Header() {
         >
           Smol<span className="italic">Studio</span>
         </Link>
-        {/* Navigation — pushed toward the right */}
+        {/* Navigation - pushed toward the right */}
         <nav className="ml-auto hidden items-center gap-1 md:flex">
           <Link
             href="/journal"

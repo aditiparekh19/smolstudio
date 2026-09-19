@@ -18,7 +18,13 @@ import {
   uploadProductImage,
 } from "../catalog/admin-service.js";
 import { requireAdmin, requireUser, type AuthUser } from "../auth/service.js";
-import { loginUser, logoutUser, registerUser } from "../auth/service.js";
+import {
+  loginUser,
+  logoutUser,
+  registerUser,
+  requestPasswordReset,
+  resetPassword,
+} from "../auth/service.js";
 import {
   addToCart,
   getCart,
@@ -406,10 +412,21 @@ export const typeDefs = /* GraphQL */ `
     status: String!
   }
 
+  type StoreCreditTransaction {
+    id: ID!
+    type: String!
+    amountInr: Float!
+    balanceAfterInr: Float!
+    orderId: ID
+    description: String
+    createdAt: String!
+  }
+
   type StoreCredit {
     balanceInr: Float!
     reservedInr: Float!
     availableInr: Float!
+    transactions: [StoreCreditTransaction!]!
   }
 
   type Query {
@@ -454,6 +471,10 @@ export const typeDefs = /* GraphQL */ `
     ): AuthPayload!
 
     login(email: String!, password: String!): AuthPayload!
+
+    forgotPassword(email: String!): Boolean!
+
+    resetPassword(token: String!, newPassword: String!): Boolean!
 
     logout: Boolean!
 
@@ -701,6 +722,7 @@ export const schema = createSchema<GraphQLContext>({
           balanceInr: credit.balanceInr,
           reservedInr: credit.reservedInr,
           availableInr: credit.availableInr,
+          transactions: credit.transactions,
         };
       },
     },
@@ -731,6 +753,29 @@ export const schema = createSchema<GraphQLContext>({
             user,
             cart: await getCart(user.id, null),
           };
+        } catch (e) {
+          return safeError(e);
+        }
+      },
+
+      forgotPassword: async (_: unknown, args: any) => {
+        try {
+          await requestPasswordReset(args.email);
+          return true;
+        } catch (e) {
+          console.error("Password reset email failed:", e);
+
+          throw new GraphQLError(
+            "We couldn't send the password reset email. Please try again later.",
+          );
+        }
+      },
+
+      resetPassword: async (_: unknown, args: any) => {
+        try {
+          await resetPassword(args.token, args.newPassword);
+
+          return true;
         } catch (e) {
           return safeError(e);
         }

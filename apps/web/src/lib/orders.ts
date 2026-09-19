@@ -626,6 +626,15 @@ export const myStoreCreditQuery = gql`
       balanceInr
       reservedInr
       availableInr
+      transactions {
+        id
+        type
+        amountInr
+        balanceAfterInr
+        orderId
+        description
+        createdAt
+      }
     }
   }
 `;
