@@ -67,6 +67,12 @@ import {
 } from "../admin/service.js";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { getDb } from "../db.js";
+import {
+  addToWishlist,
+  listWishlist,
+  removeFromWishlist,
+  isProductWishlisted,
+} from "../wishlist/service.js";
 
 export type GraphQLContext = {
   request: FastifyRequest;
@@ -429,6 +435,18 @@ export const typeDefs = /* GraphQL */ `
     transactions: [StoreCreditTransaction!]!
   }
 
+  type WishlistItem {
+    id: ID!
+    slug: String!
+    name: String!
+    description: String
+    priceInr: Int!
+    compareAtPriceInr: Int
+    imageUrl: String
+    categorySlug: String
+    sku: String!
+  }
+
   type Query {
     health: String!
     categories: [Category!]!
@@ -436,6 +454,9 @@ export const typeDefs = /* GraphQL */ `
     product(slug: String!): Product
     me: User
     cart: Cart!
+
+    myWishlist: [WishlistItem!]!
+    isWishlisted(productId: ID!): Boolean!
 
     adminProducts(search: String, active: Boolean): [AdminProduct!]!
     adminProduct(id: ID): AdminProduct
@@ -606,6 +627,10 @@ export const typeDefs = /* GraphQL */ `
     deleteCoupon(id: ID!): Boolean!
 
     updateReturnRequest(id: ID!, status: String!, adminNote: String): Boolean!
+
+    addToWishlist(productId: ID!): [WishlistItem!]!
+
+    removeFromWishlist(productId: ID!): [WishlistItem!]!
   }
 `;
 
@@ -724,6 +749,18 @@ export const schema = createSchema<GraphQLContext>({
           availableInr: credit.availableInr,
           transactions: credit.transactions,
         };
+      },
+
+      myWishlist: async (_: unknown, __: unknown, ctx) => {
+        const u = requireUser(ctx.user);
+
+        return listWishlist(u.id);
+      },
+
+      isWishlisted: async (_: unknown, args: any, ctx) => {
+        const u = requireUser(ctx.user);
+
+        return isProductWishlisted(u.id, args.productId);
       },
     },
 
@@ -1063,6 +1100,26 @@ export const schema = createSchema<GraphQLContext>({
             args.status,
             args.adminNote,
           );
+        } catch (e) {
+          return safeError(e);
+        }
+      },
+
+      addToWishlist: async (_: unknown, args: any, ctx) => {
+        try {
+          const u = requireUser(ctx.user);
+
+          return await addToWishlist(u.id, args.productId);
+        } catch (e) {
+          return safeError(e);
+        }
+      },
+
+      removeFromWishlist: async (_: unknown, args: any, ctx) => {
+        try {
+          const u = requireUser(ctx.user);
+
+          return await removeFromWishlist(u.id, args.productId);
         } catch (e) {
           return safeError(e);
         }

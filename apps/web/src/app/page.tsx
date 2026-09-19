@@ -130,7 +130,7 @@ export default async function Home({
               PEEKABOO BRAND CARD
           ===================================================== */}
           <div
-  className="
+            className="
     peekaboo-card
     relative
     isolate
@@ -144,23 +144,23 @@ export default async function Home({
     lg:aspect-[1.42/1]
     lg:rounded-[2rem]
   "
->
-  {/* Background */}
-  <div
-    className="
+          >
+            {/* Background */}
+            <div
+              className="
       absolute
       inset-0
       bg-[radial-gradient(circle_at_30%_20%,#fff9f0,transparent_35%),linear-gradient(135deg,#f3e7d7,#e6d5c8)]
     "
-  />
+            />
 
-  {/* =====================================================
+            {/* =====================================================
       BEAR
       The bear is BEHIND the curtain.
       Its left side remains visible.
   ===================================================== */}
-  <div
-    className="
+            <div
+              className="
       bear-peek
       absolute
       left-[39%]
@@ -170,27 +170,27 @@ export default async function Home({
       max-w-[145px]
       min-w-[90px]
     "
-  >
-    <img
-      src="/images/smolstudio-bear-exact.png"
-      alt=""
-      aria-hidden="true"
-      draggable={false}
-      className="
+            >
+              <img
+                src="/images/smolstudio-bear-exact.png"
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                className="
         block
         h-auto
         w-full
         select-none
         object-contain
       "
-    />
-  </div>
+              />
+            </div>
 
-  {/* =====================================================
+            {/* =====================================================
       CURTAIN
   ===================================================== */}
-  <div
-    className="
+            <div
+              className="
       curtain
       absolute
       right-0
@@ -201,10 +201,10 @@ export default async function Home({
       rounded-l-[2.5rem]
       bg-[#f6ecdf]
     "
-  >
-    {/* Curtain folds */}
-    <div
-      className="
+            >
+              {/* Curtain folds */}
+              <div
+                className="
         absolute
         inset-y-0
         left-[8%]
@@ -214,10 +214,10 @@ export default async function Home({
         sm:w-5
         md:w-6
       "
-    />
+              />
 
-    <div
-      className="
+              <div
+                className="
         absolute
         inset-y-0
         left-[22%]
@@ -227,10 +227,10 @@ export default async function Home({
         sm:w-6
         md:w-7
       "
-    />
+              />
 
-    <div
-      className="
+              <div
+                className="
         absolute
         inset-y-0
         left-[38%]
@@ -239,10 +239,10 @@ export default async function Home({
         bg-[#eadbc9]/60
         sm:w-5
       "
-    />
+              />
 
-    <div
-      className="
+              <div
+                className="
         absolute
         inset-y-0
         left-[53%]
@@ -251,10 +251,10 @@ export default async function Home({
         bg-[#fffaf3]/70
         sm:w-6
       "
-    />
+              />
 
-    <div
-      className="
+              <div
+                className="
         absolute
         inset-y-0
         left-[68%]
@@ -263,35 +263,35 @@ export default async function Home({
         bg-[#eadbc9]/50
         sm:w-5
       "
-    />
+              />
 
-    {/* Hearts / stars */}
-    <div className="absolute left-[18%] top-[18%] text-xs text-[#a78d7d] sm:text-sm">
-      ♡
-    </div>
+              {/* Hearts / stars */}
+              <div className="absolute left-[18%] top-[18%] text-xs text-[#a78d7d] sm:text-sm">
+                ♡
+              </div>
 
-    <div className="absolute right-[18%] top-[34%] text-xs text-[#a78d7d] sm:text-sm">
-      ✦
-    </div>
+              <div className="absolute right-[18%] top-[34%] text-xs text-[#a78d7d] sm:text-sm">
+                ✦
+              </div>
 
-    <div className="absolute left-[38%] top-[64%] text-[10px] text-[#a78d7d] sm:text-xs">
-      ✦
-    </div>
+              <div className="absolute left-[38%] top-[64%] text-[10px] text-[#a78d7d] sm:text-xs">
+                ✦
+              </div>
 
-    <div className="absolute right-[20%] bottom-[18%] text-xs text-[#a78d7d] sm:text-sm">
-      ✦
-    </div>
+              <div className="absolute right-[20%] bottom-[18%] text-xs text-[#a78d7d] sm:text-sm">
+                ✦
+              </div>
 
-    <div className="absolute left-[28%] top-[10%] text-lg text-[#a78d7d] sm:text-xl">
-      ♥
-    </div>
-  </div>
+              <div className="absolute left-[28%] top-[10%] text-lg text-[#a78d7d] sm:text-xl">
+                ♥
+              </div>
+            </div>
 
-  {/* =====================================================
+            {/* =====================================================
       CAPTION
   ===================================================== */}
-  <div
-    className="
+            <div
+              className="
       absolute
       bottom-5
       left-5
@@ -302,9 +302,9 @@ export default async function Home({
       md:bottom-8
       md:left-8
     "
-  >
-    <p
-      className="
+            >
+              <p
+                className="
         font-serif
         text-2xl
         italic
@@ -312,23 +312,23 @@ export default async function Home({
         text-[#5e473c]
         sm:text-3xl
       "
-    >
-      Made for little moments.
-    </p>
+              >
+                Made for little moments.
+              </p>
 
-    <p
-      className="
+              <p
+                className="
         mt-2
         text-xs
         leading-5
         text-[#7b685e]
         sm:text-sm
       "
-    >
-      A softer way to shop for growing days.
-    </p>
-  </div>
-</div>
+              >
+                A softer way to shop for growing days.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -358,21 +358,23 @@ export default async function Home({
             </h2>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex gap-3 overflow-x-auto pb-2">
             <a
               href="/"
               className="
-                shrink-0
-                rounded-full
-                border
-                border-[#cdbfb5]
-                px-4
-                py-2
-                text-xs
-                text-[#5e473c]
-                transition
-                hover:bg-[#fffaf4]
-              "
+              shrink-0
+              rounded-full
+              border
+              border-[#cdbfb5]
+              bg-[#f6eee7]
+              px-5
+              py-2.5
+              text-sm
+              font-medium
+              text-[#5e473c]
+              transition
+              hover:bg-[#efe4da]
+            "
             >
               All
             </a>
@@ -382,18 +384,20 @@ export default async function Home({
                 key={category.id}
                 href={`/?categorySlug=${category.slug}`}
                 className="
-                  shrink-0
-                  rounded-full
-                  border
-                  border-[#e1d4ca]
-                  bg-[#fffaf4]
-                  px-4
-                  py-2
-                  text-xs
-                  text-[#6d5b51]
-                  transition
-                  hover:border-[#cdbfb5]
-                "
+        shrink-0
+        rounded-full
+        border
+        border-[#e1d4ca]
+        bg-[#fffaf4]
+        px-5
+        py-2.5
+        text-sm
+        font-medium
+        text-[#6d5b51]
+        transition
+        hover:border-[#cdbfb5]
+        hover:bg-[#f6eee7]
+      "
               >
                 {category.name}
               </a>
@@ -403,15 +407,15 @@ export default async function Home({
 
         <div
           className="
-            mt-8
-            grid
-            grid-cols-2
-            gap-x-3
-            gap-y-9
-            md:grid-cols-3
-            lg:grid-cols-4
-            lg:gap-x-5
-          "
+    mt-8
+    grid
+    grid-cols-2
+    gap-x-3
+    gap-y-9
+    md:grid-cols-3
+    lg:grid-cols-4
+    lg:gap-x-5
+  "
         >
           {products.map((product) => (
             <ProductCard key={product.id} product={product} />
@@ -422,10 +426,7 @@ export default async function Home({
       {/* =========================================================
           STORY
       ========================================================= */}
-      <section
-        id="story"
-        className="border-y border-[#eadfd5] bg-[#f3e7d7]/55"
-      >
+      <section id="story" className="border-y border-[#eadfd5] bg-[#f3e7d7]/55">
         <div
           className="
             mx-auto

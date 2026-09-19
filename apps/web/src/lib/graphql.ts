@@ -1,24 +1,36 @@
-import { GraphQLClient, gql } from 'graphql-request';
+import { GraphQLClient, gql } from "graphql-request";
 
-export const graphqlUrl = process.env.NEXT_PUBLIC_GRAPHQL_URL ?? 'http://localhost:4000/graphql';
+export const graphqlUrl =
+  process.env.NEXT_PUBLIC_GRAPHQL_URL ?? "http://localhost:4000/graphql";
 
 export function apiClient(headers?: HeadersInit) {
   return new GraphQLClient(graphqlUrl, {
-    credentials: 'include',
-    headers
+    credentials: "include",
+    headers,
   });
 }
 
 export const graphqlClient = apiClient();
 
-export async function apiRequest<T>(query: string, variables?: Record<string, unknown>, headers?: HeadersInit) {
+export async function apiRequest<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  headers?: HeadersInit,
+) {
   return apiClient(headers).request<T>(query, variables);
 }
 
 export const productsQuery = gql`
   query Products($limit: Int, $categorySlug: String, $search: String) {
     products(limit: $limit, categorySlug: $categorySlug, search: $search) {
-      id slug name description priceInr compareAtPriceInr imageUrl categorySlug
+      id
+      slug
+      name
+      description
+      priceInr
+      compareAtPriceInr
+      imageUrl
+      categorySlug
     }
   }
 `;
@@ -26,45 +38,151 @@ export const productsQuery = gql`
 export const productQuery = gql`
   query Product($slug: String!) {
     product(slug: $slug) {
-      id slug name description priceInr compareAtPriceInr imageUrl images { id url altText sortOrder isPrimary } categorySlug sku sizes colors stock
-      variants { id size color stock }
+      id
+      slug
+      name
+      description
+      priceInr
+      compareAtPriceInr
+      imageUrl
+      images {
+        id
+        url
+        altText
+        sortOrder
+        isPrimary
+      }
+      categorySlug
+      sku
+      sizes
+      colors
+      stock
+      variants {
+        id
+        size
+        color
+        stock
+      }
     }
   }
 `;
 
 export const categoriesQuery = gql`
-  query Categories { categories { id slug name } }
+  query Categories {
+    categories {
+      id
+      slug
+      name
+    }
+  }
 `;
 
 export const meQuery = gql`
-  query Me { me { id email firstName lastName role } }
+  query Me {
+    me {
+      id
+      email
+      firstName
+      lastName
+      role
+    }
+  }
 `;
 
 export const loginMutation = gql`
   mutation Login($email: String!, $password: String!) {
     login(email: $email, password: $password) {
-      user { id email firstName lastName role }
-      cart { count subtotalInr items { id variantId slug name size color priceInr quantity imageUrl totalInr } }
+      user {
+        id
+        email
+        firstName
+        lastName
+        role
+      }
+      cart {
+        count
+        subtotalInr
+        items {
+          id
+          variantId
+          slug
+          name
+          size
+          color
+          priceInr
+          quantity
+          imageUrl
+          totalInr
+        }
+      }
     }
   }
 `;
 
 export const registerMutation = gql`
-  mutation Register($email: String!, $password: String!, $firstName: String, $lastName: String) {
-    register(email: $email, password: $password, firstName: $firstName, lastName: $lastName) {
-      user { id email firstName lastName role }
-      cart { count subtotalInr items { id variantId slug name size color priceInr quantity imageUrl totalInr } }
+  mutation Register(
+    $email: String!
+    $password: String!
+    $firstName: String
+    $lastName: String
+  ) {
+    register(
+      email: $email
+      password: $password
+      firstName: $firstName
+      lastName: $lastName
+    ) {
+      user {
+        id
+        email
+        firstName
+        lastName
+        role
+      }
+      cart {
+        count
+        subtotalInr
+        items {
+          id
+          variantId
+          slug
+          name
+          size
+          color
+          priceInr
+          quantity
+          imageUrl
+          totalInr
+        }
+      }
     }
   }
 `;
 
-export const logoutMutation = gql`mutation Logout { logout }`;
+export const logoutMutation = gql`
+  mutation Logout {
+    logout
+  }
+`;
 
 export const cartQuery = gql`
   query Cart {
     cart {
-      id count subtotalInr
-      items { id variantId slug name size color priceInr quantity imageUrl totalInr }
+      id
+      count
+      subtotalInr
+      items {
+        id
+        variantId
+        slug
+        name
+        size
+        color
+        priceInr
+        quantity
+        imageUrl
+        totalInr
+      }
     }
   }
 `;
@@ -72,8 +190,21 @@ export const cartQuery = gql`
 export const addToCartMutation = gql`
   mutation AddToCart($variantId: ID!, $quantity: Int) {
     addToCart(variantId: $variantId, quantity: $quantity) {
-      id count subtotalInr
-      items { id variantId slug name size color priceInr quantity imageUrl totalInr }
+      id
+      count
+      subtotalInr
+      items {
+        id
+        variantId
+        slug
+        name
+        size
+        color
+        priceInr
+        quantity
+        imageUrl
+        totalInr
+      }
     }
   }
 `;
@@ -81,8 +212,21 @@ export const addToCartMutation = gql`
 export const updateCartItemMutation = gql`
   mutation UpdateCartItem($itemId: ID!, $quantity: Int!) {
     updateCartItem(itemId: $itemId, quantity: $quantity) {
-      id count subtotalInr
-      items { id variantId slug name size color priceInr quantity imageUrl totalInr }
+      id
+      count
+      subtotalInr
+      items {
+        id
+        variantId
+        slug
+        name
+        size
+        color
+        priceInr
+        quantity
+        imageUrl
+        totalInr
+      }
     }
   }
 `;
@@ -90,8 +234,75 @@ export const updateCartItemMutation = gql`
 export const removeCartItemMutation = gql`
   mutation RemoveCartItem($itemId: ID!) {
     removeCartItem(itemId: $itemId) {
-      id count subtotalInr
-      items { id variantId slug name size color priceInr quantity imageUrl totalInr }
+      id
+      count
+      subtotalInr
+      items {
+        id
+        variantId
+        slug
+        name
+        size
+        color
+        priceInr
+        quantity
+        imageUrl
+        totalInr
+      }
+    }
+  }
+`;
+
+export const wishlistQuery = gql`
+  query MyWishlist {
+    myWishlist {
+      id
+      slug
+      name
+      description
+      priceInr
+      compareAtPriceInr
+      imageUrl
+      categorySlug
+      sku
+    }
+  }
+`;
+
+export const isWishlistedQuery = gql`
+  query IsWishlisted($productId: ID!) {
+    isWishlisted(productId: $productId)
+  }
+`;
+
+export const addToWishlistMutation = gql`
+  mutation AddToWishlist($productId: ID!) {
+    addToWishlist(productId: $productId) {
+      id
+      slug
+      name
+      description
+      priceInr
+      compareAtPriceInr
+      imageUrl
+      categorySlug
+      sku
+    }
+  }
+`;
+
+export const removeFromWishlistMutation = gql`
+  mutation RemoveFromWishlist($productId: ID!) {
+    removeFromWishlist(productId: $productId) {
+      id
+      slug
+      name
+      description
+      priceInr
+      compareAtPriceInr
+      imageUrl
+      categorySlug
+      sku
     }
   }
 `;

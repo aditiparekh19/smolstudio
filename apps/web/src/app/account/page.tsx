@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../components/AuthProvider";
+import { useState } from "react";
 
 export default function AccountPage() {
   const { user, loading, logout } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
   const router = useRouter();
 
-  if (loading) {
+  if (loading || loggingOut) {
     return (
       <main className="mx-auto max-w-4xl px-5 py-16">
-        Loading account…
+        Loading…
       </main>
     );
   }
@@ -37,8 +39,15 @@ export default function AccountPage() {
     );
   }
 
-  const isAdmin =
-    user.role === "ADMIN" || user.role === "STAFF";
+  const isAdmin = user.role === "ADMIN" || user.role === "STAFF";
+
+  async function handleLogout() {
+    setLoggingOut(true);
+
+    await logout();
+
+    router.replace("/");
+  }
 
   return (
     <main className="mx-auto max-w-4xl px-5 py-16">
@@ -83,35 +92,42 @@ export default function AccountPage() {
             <>
               <Link
                 href="/account/addresses"
-                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+                className="rounded-full border border-[#e6d8cc] bg-[#f6eee7] px-5 py-3 text-sm font-medium text-[#5e473c] transition hover:bg-[#efe4da]"
               >
                 Saved addresses
               </Link>
 
               <Link
+                href="/account/wishlist"
+                className="rounded-full border border-[#e6d8cc] bg-[#f6eee7] px-5 py-3 text-sm font-medium text-[#5e473c] transition hover:bg-[#efe4da]"
+              >
+                Wishlist
+              </Link>
+
+              <Link
                 href="/account/returns"
-                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+                className="rounded-full border border-[#e6d8cc] bg-[#f6eee7] px-5 py-3 text-sm font-medium text-[#5e473c] transition hover:bg-[#efe4da]"
               >
                 Returns
               </Link>
 
               <Link
                 href="/account/orders"
-                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+                className="rounded-full border border-[#e6d8cc] bg-[#f6eee7] px-5 py-3 text-sm font-medium text-[#5e473c] transition hover:bg-[#efe4da]"
               >
                 Order history
               </Link>
 
               <Link
                 href="/account/store-credit"
-                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+                className="rounded-full border border-[#e6d8cc] bg-[#f6eee7] px-5 py-3 text-sm font-medium text-[#5e473c] transition hover:bg-[#efe4da]"
               >
                 Store credit
               </Link>
 
               <Link
                 href="/cart"
-                className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+                className="rounded-full border border-[#e6d8cc] bg-[#f6eee7] px-5 py-3 text-sm font-medium text-[#5e473c] transition hover:bg-[#efe4da]"
               >
                 View bag
               </Link>
@@ -120,14 +136,11 @@ export default function AccountPage() {
 
           <button
             type="button"
-            onClick={async () => {
-              await logout();
-              router.push("/");
-              router.refresh();
-            }}
-            className="rounded-full border border-[#cdbfb5] px-5 py-3 text-sm text-[#5e473c]"
+            onClick={() => void handleLogout()}
+            disabled={loggingOut}
+            className="rounded-full border border-[#e6d8cc] bg-[#f6eee7] px-5 py-3 text-sm font-medium text-[#5e473c] transition hover:bg-[#efe4da] disabled:opacity-60"
           >
-            Logout
+            {loggingOut ? "Logging out…" : "Logout"}
           </button>
         </div>
       </div>

@@ -22,14 +22,14 @@ export function Header() {
         <nav className="ml-auto hidden items-center gap-1 md:flex">
           <Link
             href="/journal"
-            className="rounded-full px-4 py-2 text-sm text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
+            className="rounded-full px-4 py-2 text-[15px] text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
           >
             Journal
           </Link>
 
           <Link
             href="/contact"
-            className="rounded-full px-4 py-2 text-sm text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
+            className="rounded-full px-4 py-2 text-[15px] text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
           >
             Contact Us
           </Link>
@@ -38,37 +38,36 @@ export function Header() {
             href="https://www.instagram.com/smolstudio_/"
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-full px-4 py-2 text-sm text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
+            className="rounded-full px-4 py-2 text-[15px] text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
           >
             Instagram
           </a>
         </nav>
-        {/* Right utilities */}{" "}
+
+        {/* Right utilities */}
         <div className="ml-3 flex items-center gap-1 border-l border-[#eadfd5] pl-3">
-          {" "}
           <Link
             href="/search"
             aria-label="Search"
-            className="rounded-full px-4 py-2 text-sm text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
+            className="rounded-full px-4 py-2 text-[15px] text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
           >
-            {" "}
-            ⌕{" "}
-          </Link>{" "}
+            ⌕
+          </Link>
+
           <Link
             href={user ? "/account" : "/login"}
-            className="hidden rounded-full px-4 py-2 text-sm text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321] sm:block"
+            className="hidden rounded-full px-4 py-2 text-[15px] text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321] sm:block"
           >
-            {" "}
-            {user ? user.firstName || "Account" : "Login"}{" "}
-          </Link>{" "}
+            {user ? user.firstName || "Account" : "Login"}
+          </Link>
+
           <Link
             href="/cart"
             aria-label="Cart"
-            className="rounded-full px-4 py-2 text-sm text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
+            className="rounded-full px-4 py-2 text-[15px] text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
           >
-            {" "}
-            Bag{count > 0 ? ` (${count})` : ""}{" "}
-          </Link>{" "}
+            Bag{count > 0 ? ` (${count})` : ""}
+          </Link>
         </div>
       </div>
     </header>
