@@ -104,7 +104,7 @@ export default function AdminProductsPage() {
           {error}
         </p>
       )}
-      <div className="mt-6 overflow-hidden rounded-[2rem] border border-[#eadfd5] bg-white">
+      <div className="mt-6 overflow-hidden rounded-4xl border border-[#eadfd5] bg-white">
         {busy ? (
           <p className="p-8 text-[#8b7a70]">Loading products…</p>
         ) : rows.length === 0 ? (

@@ -69,7 +69,7 @@ export default function JournalPage() {
           {postcards.map((postcard) => (
             <article
               key={postcard.number}
-              className="group flex min-h-[330px] flex-col rounded-[2rem] border border-[#eadfd5] bg-[#fffdf9] p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(94,71,60,0.08)] sm:p-8"
+              className="group flex min-h-[330px] flex-col rounded-4xl border border-[#eadfd5] bg-[#fffdf9] p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(94,71,60,0.08)] sm:p-8"
             >
               {" "}
               <div className="flex items-start justify-between">
@@ -103,7 +103,7 @@ export default function JournalPage() {
         {" "}
         <div className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-20">
           {" "}
-          <div className="rounded-[2rem] bg-[#f3e9df] px-7 py-12 text-center sm:px-10">
+          <div className="rounded-4xl bg-[#f3e9df] px-7 py-12 text-center sm:px-10">
             {" "}
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#9b877a]">
               {" "}

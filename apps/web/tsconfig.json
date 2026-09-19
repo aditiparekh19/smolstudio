@@ -29,7 +29,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/dev/types/**/*.ts"
-  ],
+, "../../../cart.test.tsx"  ],
   "exclude": [
     "node_modules"
   ]

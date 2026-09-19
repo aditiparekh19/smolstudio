@@ -46,7 +46,7 @@ export default function Orders() {
           {error}
         </p>
       )}
-      <div className="mt-8 divide-y divide-[#eadfd5] rounded-[2rem] border border-[#eadfd5] bg-white">
+      <div className="mt-8 divide-y divide-[#eadfd5] rounded-4xl border border-[#eadfd5] bg-white">
         {orders.length === 0 ? (
           <p className="p-7 text-[#8b7a70]">No orders yet.</p>
         ) : (

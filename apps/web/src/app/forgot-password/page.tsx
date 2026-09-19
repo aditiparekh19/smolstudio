@@ -50,7 +50,7 @@ export default function ForgotPasswordPage() {
           Reset link sent
         </h1>
 
-        <div className="mt-10 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-7">
+        <div className="mt-10 rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-7">
           <p className="text-sm leading-6 text-[#5f554f]">
             If an account exists for this email address, we&apos;ve sent a
             password reset link. Please check your inbox.
@@ -88,7 +88,7 @@ export default function ForgotPasswordPage() {
 
       <form
         onSubmit={submit}
-        className="mt-10 space-y-5 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-7"
+        className="mt-10 space-y-5 rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-7"
       >
         <label className="block text-sm">
           Email

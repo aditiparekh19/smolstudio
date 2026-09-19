@@ -73,6 +73,16 @@ import {
   removeFromWishlist,
   isProductWishlisted,
 } from "../wishlist/service.js";
+import {
+  listProductReviews,
+  getMyProductReview,
+  createProductReview,
+  updateProductReview,
+  deleteProductReview,
+  listAdminReviews,
+  deleteAdminReview,
+  customerPurchasedProduct,
+} from "../reviews/service.js";
 
 export type GraphQLContext = {
   request: FastifyRequest;
@@ -229,6 +239,11 @@ export const typeDefs = /* GraphQL */ `
     quantity: Int!
     unitPriceInr: Float!
     totalPriceInr: Float!
+
+    productId: ID
+    variantId: ID
+    size: String
+    replacementSizes: [String!]!
   }
 
   type ShippingAddress {
@@ -418,6 +433,12 @@ export const typeDefs = /* GraphQL */ `
     status: String!
   }
 
+  input AfterSalesImageInput {
+    filename: String!
+    contentType: String!
+    dataBase64: String!
+  }
+
   type StoreCreditTransaction {
     id: ID!
     type: String!
@@ -445,6 +466,40 @@ export const typeDefs = /* GraphQL */ `
     imageUrl: String
     categorySlug: String
     sku: String!
+  }
+
+  type ProductReview {
+    id: ID!
+    productId: ID!
+    customerId: ID
+    customerName: String
+    customerEmail: String
+    productName: String
+    rating: Int!
+    title: String
+    body: String
+    isPublished: Boolean!
+    createdAt: String!
+    verifiedPurchase: Boolean!
+  }
+
+  type ReviewSummary {
+    averageRating: Float!
+    reviewCount: Int!
+  }
+
+  type AdminReview {
+    id: ID!
+    productId: ID!
+    customerId: ID!
+    productName: String!
+    customerName: String
+    customerEmail: String!
+    rating: Int!
+    title: String
+    body: String
+    isPublished: Boolean!
+    createdAt: String!
   }
 
   type Query {
@@ -481,6 +536,11 @@ export const typeDefs = /* GraphQL */ `
     adminCategories: [AdminCategory!]!
     adminCoupons: [Coupon!]!
     adminReturns(status: String): [ReturnRequest!]!
+
+    productReviews(productId: ID!): [ProductReview!]!
+    myProductReview(productId: ID!): ProductReview
+    adminReviews(productId: ID, published: Boolean): [AdminReview!]!
+    canReviewProduct(productId: ID!): Boolean!
   }
 
   type Mutation {
@@ -573,6 +633,7 @@ export const typeDefs = /* GraphQL */ `
       requestType: String!
       reason: String!
       requestedSize: String
+      images: [AfterSalesImageInput!]
     ): AfterSalesRequest!
 
     saveAddress(
@@ -631,6 +692,24 @@ export const typeDefs = /* GraphQL */ `
     addToWishlist(productId: ID!): [WishlistItem!]!
 
     removeFromWishlist(productId: ID!): [WishlistItem!]!
+
+    createProductReview(
+      productId: ID!
+      rating: Int!
+      title: String
+      body: String!
+    ): ProductReview!
+
+    updateProductReview(
+      id: ID!
+      rating: Int!
+      title: String
+      body: String!
+    ): ProductReview!
+
+    deleteProductReview(id: ID!): Boolean!
+
+    deleteAdminReview(id: ID!): Boolean!
   }
 `;
 
@@ -761,6 +840,27 @@ export const schema = createSchema<GraphQLContext>({
         const u = requireUser(ctx.user);
 
         return isProductWishlisted(u.id, args.productId);
+      },
+
+      productReviews: async (_: unknown, args: any) => {
+        return listProductReviews(args.productId);
+      },
+
+      myProductReview: async (_: unknown, args: any, ctx) => {
+        const u = requireUser(ctx.user);
+
+        return getMyProductReview(u.id, args.productId);
+      },
+
+      adminReviews: async (_: unknown, args: any, ctx) => {
+        requireAdmin(ctx.user);
+
+        return listAdminReviews(args.productId ?? null, args.published ?? null);
+      },
+
+      canReviewProduct: async (_: unknown, args: any, ctx) => {
+        const u = requireUser(ctx.user);
+        return customerPurchasedProduct(u.id, args.productId);
       },
     },
 
@@ -1003,6 +1103,7 @@ export const schema = createSchema<GraphQLContext>({
             args.requestType,
             args.reason,
             args.requestedSize,
+            args.images,
           );
         } catch (e) {
           return safeError(e);
@@ -1120,6 +1221,64 @@ export const schema = createSchema<GraphQLContext>({
           const u = requireUser(ctx.user);
 
           return await removeFromWishlist(u.id, args.productId);
+        } catch (e) {
+          return safeError(e);
+        }
+      },
+
+      createProductReview: async (_: unknown, args: any, ctx) => {
+        try {
+          const u = requireUser(ctx.user);
+
+          return await createProductReview(
+            u.id,
+            args.productId,
+            args.rating,
+            args.title ?? null,
+            args.body,
+          );
+        } catch (e) {
+          return safeError(e);
+        }
+      },
+
+      updateProductReview: async (_: unknown, args: any, ctx) => {
+        try {
+          const u = requireUser(ctx.user);
+
+          const review = await updateProductReview(
+            u.id,
+            args.id,
+            args.rating,
+            args.title ?? null,
+            args.body,
+          );
+
+          if (!review) {
+            throw new Error("Review not found.");
+          }
+
+          return review;
+        } catch (e) {
+          return safeError(e);
+        }
+      },
+
+      deleteProductReview: async (_: unknown, args: any, ctx) => {
+        try {
+          const u = requireUser(ctx.user);
+
+          return await deleteProductReview(u.id, args.id);
+        } catch (e) {
+          return safeError(e);
+        }
+      },
+
+      deleteAdminReview: async (_: unknown, args: any, ctx) => {
+        try {
+          requireAdmin(ctx.user);
+
+          return await deleteAdminReview(args.id);
         } catch (e) {
           return safeError(e);
         }

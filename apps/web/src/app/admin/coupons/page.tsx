@@ -13,8 +13,8 @@ export default function Coupons() {
   const [rows, setRows] = useState<any[]>([]);
   const [code, setCode] = useState("");
   const [type, setType] = useState("PERCENT");
-  const [value, setValue] = useState("10");
-  const [min, setMin] = useState("0");
+  const [value, setValue] = useState("");
+  const [min, setMin] = useState("");
   const [limit, setLimit] = useState("");
   const [error, setError] = useState("");
   async function load() {
@@ -37,24 +37,45 @@ export default function Coupons() {
     );
 
   async function add() {
-    try {
-      await apiClient().request(saveCouponMutation, {
-        code,
-        discountType: type,
-        discountValue: Number(value),
-        minOrderInr: Number(min) || 0,
-        maxDiscountInr: null,
-        maxRedemptions: limit ? Number(limit) : null,
-        startsAt: new Date().toISOString(),
-        isActive: true,
-      });
+  setError("");
 
-      setCode("");
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to save coupon.");
-    }
+  const trimmedCode = code.trim().toUpperCase();
+  const numericValue = Number(value);
+
+  if (!trimmedCode) {
+    setError("Coupon code is required.");
+    return;
   }
+
+  if (!type) {
+    setError("Discount type is required.");
+    return;
+  }
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    setError("Discount must be greater than 0.");
+    return;
+  }
+
+  try {
+    await apiClient().request(saveCouponMutation, {
+      code: trimmedCode,
+      discountType: type,
+      discountValue: numericValue,
+      minOrderInr: Number(min) || 0,
+      maxDiscountInr: null,
+      maxRedemptions: limit ? Number(limit) : null,
+      startsAt: new Date().toISOString(),
+      isActive: true,
+    });
+
+    setCode("");
+    setValue("");
+    await load();
+  } catch (e) {
+    setError(e instanceof Error ? e.message : "Unable to save coupon.");
+  }
+}
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-10 lg:px-8">
@@ -67,7 +88,7 @@ export default function Coupons() {
           {error}
         </p>
       )}
-      <div className="mt-8 grid gap-3 rounded-[2rem] border border-[#eadfd5] bg-white p-6 md:grid-cols-6">
+      <div className="mt-8 grid gap-3 rounded-4xl border border-[#eadfd5] bg-white p-6 md:grid-cols-6">
         <input
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -104,13 +125,20 @@ export default function Coupons() {
           className="rounded-xl border border-[#d9cbc0] px-3 py-3"
         />
         <button
+          type="button"
           onClick={() => void add()}
-          className="rounded-full bg-[#5e473c] px-4 py-3 text-white"
+          disabled={
+            !code.trim() ||
+            !type ||
+            !Number.isFinite(Number(value)) ||
+            Number(value) <= 0
+          }
+          className="rounded-full bg-[#5e473c] px-5 py-3 text-sm font-medium text-white transition hover:bg-[#4d392f] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Add
         </button>
       </div>
-      <div className="mt-6 divide-y divide-[#eadfd5] rounded-[2rem] border border-[#eadfd5] bg-white">
+      <div className="mt-6 divide-y divide-[#eadfd5] rounded-4xl border border-[#eadfd5] bg-white">
         {rows.map((c) => (
           <div key={c.id} className="flex flex-wrap items-center gap-4 p-5">
             <div className="flex-1">

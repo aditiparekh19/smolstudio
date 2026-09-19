@@ -44,7 +44,8 @@ export function buildApp() {
   app.addHook("preParsing", async (request, _reply, payload) => {
     if (request.url !== "/webhooks/razorpay") return payload;
     const chunks: Buffer[] = [];
-    for await (const chunk of payload as any) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    for await (const chunk of payload as any)
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     const raw = Buffer.concat(chunks);
     (request as any).rawBody = raw;
     return Readable.from(raw);
@@ -60,14 +61,18 @@ export function buildApp() {
       return reply.code(200).send({ ok: true });
     } catch (error) {
       request.log.error(error);
-      return reply.code(400).send({ ok: false, error: error instanceof Error ? error.message : "Webhook failed" });
+      return reply.code(400).send({
+        ok: false,
+        error: error instanceof Error ? error.message : "Webhook failed",
+      });
     }
   });
 
   app.get("/health", async () => ({ status: "ok", service: "smolstudio-api" }));
   app.get("/media/products/*", async (req, reply) => {
     const wildcard = (req.params as { "*": string })["*"] || "";
-    const root = join(process.cwd(), "uploads", "products");
+    const root =
+      process.env.MEDIA_ROOT ?? join(process.cwd(), "uploads", "products");
     const file = normalize(join(root, wildcard));
     if (!file.startsWith(root))
       return reply.code(400).send({ error: "Invalid path" });
@@ -88,6 +93,44 @@ export function buildApp() {
         .send(data);
     } catch {
       return reply.code(404).send({ error: "Media not found" });
+    }
+  });
+  app.get("/media/returns/*", async (req, reply) => {
+    const wildcard = (req.params as { "*": string })["*"] || "";
+
+    const root =
+      process.env.RETURN_MEDIA_ROOT ??
+      join(process.cwd(), "uploads", "returns");
+
+    const file = normalize(join(root, wildcard));
+
+    if (!file.startsWith(root)) {
+      return reply.code(400).send({
+        error: "Invalid path",
+      });
+    }
+
+    try {
+      const data = await readFile(file);
+
+      const ext = file.toLowerCase().split(".").pop();
+
+      const contentType =
+        ext === "jpg" || ext === "jpeg"
+          ? "image/jpeg"
+          : ext === "png"
+            ? "image/png"
+            : ext === "webp"
+              ? "image/webp"
+              : ext === "gif"
+                ? "image/gif"
+                : "application/octet-stream";
+
+      return reply.type(contentType).send(data);
+    } catch {
+      return reply.code(404).send({
+        error: "Media not found",
+      });
     }
   });
 
@@ -133,7 +176,12 @@ export function buildApp() {
 
 const app = buildApp();
 
-const reservationCleanup = setInterval(() => { void releaseExpiredReservations().catch((error) => app.log.error(error)); }, 5 * 60 * 1000);
+const reservationCleanup = setInterval(
+  () => {
+    void releaseExpiredReservations().catch((error) => app.log.error(error));
+  },
+  5 * 60 * 1000,
+);
 reservationCleanup.unref?.();
 
 app

@@ -306,3 +306,125 @@ export const removeFromWishlistMutation = gql`
     }
   }
 `;
+
+export const productReviewsQuery = gql`
+  query ProductReviews($productId: ID!) {
+    productReviews(productId: $productId) {
+      id
+      productId
+      customerName
+      rating
+      title
+      body
+      createdAt
+      verifiedPurchase
+    }
+  }
+`;
+
+export const myProductReviewQuery = gql`
+  query MyProductReview($productId: ID!) {
+    myProductReview(productId: $productId) {
+      id
+      productId
+      customerName
+      rating
+      title
+      body
+      createdAt
+      verifiedPurchase
+    }
+  }
+`;
+
+export const createProductReviewMutation = gql`
+  mutation CreateProductReview(
+    $productId: ID!
+    $rating: Int!
+    $title: String
+    $body: String!
+  ) {
+    createProductReview(
+      productId: $productId
+      rating: $rating
+      title: $title
+      body: $body
+    ) {
+      id
+      productId
+      customerName
+      rating
+      title
+      body
+      createdAt
+      verifiedPurchase
+    }
+  }
+`;
+
+export const updateProductReviewMutation = gql`
+  mutation UpdateProductReview(
+    $id: ID!
+    $rating: Int!
+    $title: String
+    $body: String!
+  ) {
+    updateProductReview(
+      id: $id
+      rating: $rating
+      title: $title
+      body: $body
+    ) {
+      id
+      productId
+      customerName
+      rating
+      title
+      body
+      createdAt
+      verifiedPurchase
+    }
+  }
+`;
+
+export const deleteProductReviewMutation = gql`
+  mutation DeleteProductReview($id: ID!) {
+    deleteProductReview(id: $id)
+  }
+`;
+
+export const adminReviewsQuery = gql`
+  query AdminReviews(
+    $productId: ID
+    $published: Boolean
+  ) {
+    adminReviews(
+      productId: $productId
+      published: $published
+    ) {
+      id
+      productId
+      customerId
+      productName
+      customerName
+      customerEmail
+      rating
+      title
+      body
+      isPublished
+      createdAt
+    }
+  }
+`;
+
+export const deleteAdminReviewMutation = gql`
+  mutation DeleteAdminReview($id: ID!) {
+    deleteAdminReview(id: $id)
+  }
+`;
+
+export const canReviewProductQuery = gql`
+  query CanReviewProduct($productId: ID!) {
+    canReviewProduct(productId: $productId)
+  }
+`;

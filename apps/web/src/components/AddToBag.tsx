@@ -62,7 +62,6 @@ export function AddToBag({
           </button>
         ))}{" "}
       </div>
-      ```
       <button
         type="button"
         disabled={disabled || busy || !selected || available.length === 0}

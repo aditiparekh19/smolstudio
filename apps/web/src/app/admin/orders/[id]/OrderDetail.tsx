@@ -400,7 +400,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_360px]">
         <section className="space-y-6">
           {/* ITEMS */}
-          <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+          <div className="rounded-4xl border border-[#eadfd5] bg-white p-6">
             <h2 className="font-serif text-2xl text-[#5e473c]">Items</h2>
 
             {o.items.map((i) => (
@@ -449,7 +449,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
           </div>
 
           {/* AFTER SALES */}
-          <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+          <div className="rounded-4xl border border-[#eadfd5] bg-white p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="font-serif text-2xl text-[#5e473c]">
@@ -681,7 +681,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
           </div>
 
           {/* ORDER TIMELINE */}
-          <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+          <div className="rounded-4xl border border-[#eadfd5] bg-white p-6">
             <h2 className="font-serif text-2xl text-[#5e473c]">
               Order timeline
             </h2>
@@ -699,7 +699,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
           </div>
 
           {/* REFUNDS */}
-          <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+          <div className="rounded-4xl border border-[#eadfd5] bg-white p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="font-serif text-2xl text-[#5e473c]">Refunds</h2>
@@ -880,7 +880,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
           </div>
 
           {/* DELIVERY ADDRESS */}
-          <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+          <div className="rounded-4xl border border-[#eadfd5] bg-white p-6">
             <h2 className="font-serif text-2xl text-[#5e473c]">
               Delivery address
             </h2>
@@ -919,7 +919,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
         </section>
 
         {/* FULFILLMENT */}
-        <aside className="h-fit rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6">
+        <aside className="h-fit rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-6">
           <h2 className="font-serif text-2xl text-[#5e473c]">Fulfillment</h2>
 
           <label className="mt-5 block text-sm">

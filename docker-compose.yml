@@ -59,6 +59,7 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-SmolStudio <orders@smolstudio.local>}
       SHIPROCKET_EMAIL: ${SHIPROCKET_EMAIL:-}
       SHIPROCKET_PASSWORD: ${SHIPROCKET_PASSWORD:-}
+      MEDIA_ROOT: /app/apps/api/uploads/products
     ports:
       - "4000:4000"
     volumes:

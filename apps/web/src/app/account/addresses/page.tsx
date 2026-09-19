@@ -186,7 +186,7 @@ export default function Addresses() {
         </p>
       )}
 
-      <div className="mt-8 rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+      <div className="mt-8 rounded-4xl border border-[#eadfd5] bg-white p-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="font-medium text-[#5e473c]">
             {a.id ? "Edit address" : "Add new address"}
@@ -246,7 +246,7 @@ export default function Addresses() {
         {rows.map((x) => (
           <div
             key={x.id}
-            className="rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6"
+            className="rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-6"
           >
             <p className="font-medium">{x.label || x.recipientName}</p>
             <p className="mt-3 text-sm leading-6">

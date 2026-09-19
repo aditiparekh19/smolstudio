@@ -142,7 +142,7 @@ export default async function Home({
     sm:rounded-[1.75rem]
     md:aspect-[1.25/0.82]
     lg:aspect-[1.42/1]
-    lg:rounded-[2rem]
+    lg:rounded-4xl
   "
           >
             {/* Background */}

@@ -4,6 +4,7 @@ import { graphqlClient, productQuery } from "../../../lib/graphql";
 import type { Product } from "../../../lib/types";
 import { AddToBag } from "../../../components/AddToBag";
 import ProductGallery from "../../../components/ProductGallery";
+import ProductReviews from "../../../components/ProductReviews";
 
 export const revalidate = 60;
 
@@ -47,7 +48,10 @@ export default async function ProductPage({
           </p>
 
           <div className="mt-8 max-w-sm">
-            <AddToBag variants={product.variants} disabled={product.stock < 1} />
+            <AddToBag
+              variants={product.variants}
+              disabled={product.stock < 1}
+            />
             <p className="mt-3 text-center text-xs text-[#8b7a70]">
               {product.stock > 0
                 ? `${product.stock} pieces currently available`
@@ -56,6 +60,7 @@ export default async function ProductPage({
           </div>
         </div>
       </div>
+      <ProductReviews productId={product.id} />
     </main>
   );
 }

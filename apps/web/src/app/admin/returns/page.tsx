@@ -1,3 +1,111 @@
-'use client';
-import Link from'next/link';import{useEffect,useState}from'react';import{apiClient}from'../../../lib/graphql';import{adminReturnsQuery,updateReturnRequestMutation}from'../../../lib/orders';import{useAuth}from'../../../components/AuthProvider';
-export default function Returns(){const{user,loading}=useAuth();const[rows,setRows]=useState<any[]>([]);const[status,setStatus]=useState('REQUESTED');const[error,setError]=useState('');async function load(){try{setRows((await apiClient().request<any>(adminReturnsQuery,{status})).adminReturns)}catch(e){setError(e instanceof Error?e.message:'Unable to load returns.')}}useEffect(()=>{if(!loading&&user)void load()},[loading,user,status]);if(loading)return <main className="mx-auto max-w-6xl px-5 py-16">Loading…</main>;if(!user||!['ADMIN','STAFF'].includes(user.role))return <main className="mx-auto max-w-6xl px-5 py-16">Admin access required.</main>;return <main className="mx-auto max-w-6xl px-5 py-10 lg:px-8"><Link href="/admin" className="text-sm text-[#8b7a70]">← Back office</Link><h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Returns</h1><div className="mt-6 flex gap-3"><select value={status} onChange={e=>setStatus(e.target.value)} className="rounded-full border border-[#d9cbc0] px-4 py-3"><option>REQUESTED</option><option>APPROVED</option><option>REJECTED</option><option>CANCELLED</option></select></div>{error&&<p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}<div className="mt-6 divide-y divide-[#eadfd5] rounded-[2rem] border border-[#eadfd5] bg-white">{rows.length===0?<p className="p-6 text-[#8b7a70]">No requests.</p>:rows.map(r=><div key={r.id} className="p-6"><div className="flex flex-wrap gap-4"><div className="flex-1"><p className="font-medium">{r.orderNumber}</p><p className="text-xs text-[#8b7a70]">{r.customerEmail} · ₹{r.refundAmountInr}</p></div><span>{r.status}</span></div><p className="mt-3 text-sm">{r.reason}</p>{r.status==='REQUESTED'&&<div className="mt-4 flex gap-2"><button onClick={async()=>{await apiClient().request(updateReturnRequestMutation,{id:r.id,status:'APPROVED',adminNote:'Approved by admin'});await load()}} className="rounded-full bg-[#5e473c] px-4 py-2 text-sm text-white">Approve & refund</button><button onClick={async()=>{await apiClient().request(updateReturnRequestMutation,{id:r.id,status:'REJECTED',adminNote:'Return rejected'});await load()}} className="rounded-full border border-red-200 px-4 py-2 text-sm text-red-700">Reject</button></div>}</div>)}</div></main>}
+"use client";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { apiClient } from "../../../lib/graphql";
+import {
+  adminReturnsQuery,
+  updateReturnRequestMutation,
+} from "../../../lib/orders";
+import { useAuth } from "../../../components/AuthProvider";
+export default function Returns() {
+  const { user, loading } = useAuth();
+  const [rows, setRows] = useState<any[]>([]);
+  const [status, setStatus] = useState("REQUESTED");
+  const [error, setError] = useState("");
+  async function load() {
+    try {
+      setRows(
+        (await apiClient().request<any>(adminReturnsQuery, { status }))
+          .adminReturns,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to load returns.");
+    }
+  }
+  useEffect(() => {
+    if (!loading && user) void load();
+  }, [loading, user, status]);
+  if (loading)
+    return <main className="mx-auto max-w-6xl px-5 py-16">Loading…</main>;
+  if (!user || !["ADMIN", "STAFF"].includes(user.role))
+    return (
+      <main className="mx-auto max-w-6xl px-5 py-16">
+        Admin access required.
+      </main>
+    );
+  return (
+    <main className="mx-auto max-w-6xl px-5 py-10 lg:px-8">
+      <Link href="/admin" className="text-sm text-[#8b7a70]">
+        ← Back office
+      </Link>
+      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Returns</h1>
+      <div className="mt-6 flex gap-3">
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="rounded-full border border-[#d9cbc0] px-4 py-3"
+        >
+          <option>REQUESTED</option>
+          <option>APPROVED</option>
+          <option>REJECTED</option>
+          <option>CANCELLED</option>
+        </select>
+      </div>
+      {error && (
+        <p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      <div className="mt-6 divide-y divide-[#eadfd5] rounded-4xl border border-[#eadfd5] bg-white">
+        {rows.length === 0 ? (
+          <p className="p-6 text-[#8b7a70]">No requests.</p>
+        ) : (
+          rows.map((r) => (
+            <div key={r.id} className="p-6">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1">
+                  <p className="font-medium">{r.orderNumber}</p>
+                  <p className="text-xs text-[#8b7a70]">
+                    {r.customerEmail} · ₹{r.refundAmountInr}
+                  </p>
+                </div>
+                <span>{r.status}</span>
+              </div>
+              <p className="mt-3 text-sm">{r.reason}</p>
+              {r.status === "REQUESTED" && (
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={async () => {
+                      await apiClient().request(updateReturnRequestMutation, {
+                        id: r.id,
+                        status: "APPROVED",
+                        adminNote: "Approved by admin",
+                      });
+                      await load();
+                    }}
+                    className="rounded-full bg-[#5e473c] px-4 py-2 text-sm text-white"
+                  >
+                    Approve & refund
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await apiClient().request(updateReturnRequestMutation, {
+                        id: r.id,
+                        status: "REJECTED",
+                        adminNote: "Return rejected",
+                      });
+                      await load();
+                    }}
+                    className="rounded-full border border-red-200 px-4 py-2 text-sm text-red-700"
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </main>
+  );
+}

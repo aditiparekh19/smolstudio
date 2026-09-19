@@ -18,6 +18,10 @@ type OrderItem = {
   quantity: number;
   unitPriceInr: number;
   totalPriceInr: number;
+  productId: string | null;
+  variantId: string | null;
+  size: string | null;
+  replacementSizes: string[];
 };
 
 type O = {
@@ -92,6 +96,14 @@ export default function OrderDetail({ id }: { id: string }) {
   const [requestType, setRequestType] = useState<RequestType>("PRODUCT_FAULT");
   const [afterSalesReason, setAfterSalesReason] = useState("");
   const [requestedSize, setRequestedSize] = useState("");
+  const [afterSalesImages, setAfterSalesImages] = useState<
+    {
+      filename: string;
+      contentType: string;
+      dataBase64: string;
+      previewUrl: string;
+    }[]
+  >([]);
 
   async function loadOrder() {
     const r = await apiClient().request<{ myOrder: O }>(myOrderQuery, { id });
@@ -196,6 +208,7 @@ export default function OrderDetail({ id }: { id: string }) {
     setRequestType(type);
     setAfterSalesReason("");
     setRequestedSize("");
+    setAfterSalesImages([]);
   }
 
   function closeAfterSales() {
@@ -204,11 +217,102 @@ export default function OrderDetail({ id }: { id: string }) {
     setActiveItemId(null);
     setAfterSalesReason("");
     setRequestedSize("");
+    setAfterSalesImages([]);
+  }
+
+  function handleAfterSalesImages(files: FileList | null) {
+    if (!files) return;
+
+    const selectedFiles = Array.from(files);
+
+    if (selectedFiles.length > 3) {
+      setError("You can upload a maximum of 3 images.");
+      return;
+    }
+
+    const allowedTypes = new Set([
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ]);
+
+    for (const file of selectedFiles) {
+      if (!allowedTypes.has(file.type)) {
+        setError("Only JPG, PNG, WEBP, and GIF images are allowed.");
+        return;
+      }
+
+      if (file.size > 8 * 1024 * 1024) {
+        setError(`"${file.name}" is larger than the 8 MB limit.`);
+        return;
+      }
+    }
+
+    setError("");
+
+    void Promise.all(
+      selectedFiles.map(
+        (file) =>
+          new Promise<{
+            filename: string;
+            contentType: string;
+            dataBase64: string;
+            previewUrl: string;
+          }>((resolve, reject) => {
+            const reader = new FileReader();
+
+            reader.onload = () => {
+              const result = String(reader.result ?? "");
+
+              const commaIndex = result.indexOf(",");
+
+              if (commaIndex === -1) {
+                reject(new Error("Unable to read image."));
+                return;
+              }
+
+              resolve({
+                filename: file.name,
+                contentType: file.type,
+                dataBase64: result.slice(commaIndex + 1),
+                previewUrl: result,
+              });
+            };
+
+            reader.onerror = () => {
+              reject(new Error(`Unable to read "${file.name}".`));
+            };
+
+            reader.readAsDataURL(file);
+          }),
+      ),
+    )
+      .then((images) => {
+        setAfterSalesImages(images);
+      })
+      .catch((e) => {
+        setError(
+          e instanceof Error
+            ? e.message
+            : "Unable to read the selected images.",
+        );
+      });
   }
 
   async function submitAfterSales(item: OrderItem) {
     if (!afterSalesReason.trim()) {
       setError("Please enter a reason.");
+      return;
+    }
+
+    if (requestType === "PRODUCT_FAULT" && afterSalesImages.length < 1) {
+      setError("Please upload at least 1 image showing the product fault.");
+      return;
+    }
+
+    if (afterSalesImages.length > 3) {
+      setError("You can upload a maximum of 3 images.");
       return;
     }
 
@@ -231,6 +335,14 @@ export default function OrderDetail({ id }: { id: string }) {
         reason: afterSalesReason.trim(),
         requestedSize:
           requestType === "SIZE_REPLACEMENT" ? requestedSize.trim() : null,
+        images:
+          requestType === "PRODUCT_FAULT"
+            ? afterSalesImages.map((image) => ({
+                filename: image.filename,
+                contentType: image.contentType,
+                dataBase64: image.dataBase64,
+              }))
+            : [],
       });
 
       await loadReturns();
@@ -238,6 +350,7 @@ export default function OrderDetail({ id }: { id: string }) {
       setActiveItemId(null);
       setAfterSalesReason("");
       setRequestedSize("");
+      setAfterSalesImages([]);
 
       const response = result.requestItemAfterSales;
 
@@ -318,7 +431,7 @@ export default function OrderDetail({ id }: { id: string }) {
         </p>
       )}
 
-      <div className="mt-8 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6">
+      <div className="mt-8 rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-6">
         <div className="grid gap-3 sm:grid-cols-4">
           {steps.map((s, i) => (
             <div key={s} className="text-center">
@@ -363,7 +476,7 @@ export default function OrderDetail({ id }: { id: string }) {
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_360px]">
         <section className="space-y-6">
-          <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+          <div className="rounded-4xl border border-[#eadfd5] bg-white p-6">
             <h2 className="font-serif text-2xl text-[#5e473c]">Items</h2>
 
             <div className="mt-2">
@@ -491,12 +604,29 @@ export default function OrderDetail({ id }: { id: string }) {
                               Replacement size
                             </label>
 
-                            <input
-                              value={requestedSize}
-                              onChange={(e) => setRequestedSize(e.target.value)}
-                              placeholder="e.g. S, M, L, XL, 32"
-                              className="mt-2 w-full rounded-xl border border-[#d9cbc0] bg-white p-3 text-sm outline-none focus:border-[#8b7a70]"
-                            />
+                            {item.replacementSizes.length > 0 ? (
+                              <select
+                                value={requestedSize}
+                                onChange={(e) =>
+                                  setRequestedSize(e.target.value)
+                                }
+                                className="mt-2 w-full rounded-xl border border-[#d9cbc0] bg-white p-3 text-sm outline-none focus:border-[#8b7a70]"
+                              >
+                                <option value="">
+                                  Select replacement size
+                                </option>
+
+                                {item.replacementSizes.map((size) => (
+                                  <option key={size} value={size}>
+                                    {size}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <p className="mt-2 rounded-xl bg-white p-3 text-sm text-[#8b7a70]">
+                                No other sizes are currently available.
+                              </p>
+                            )}
                           </div>
                         )}
 
@@ -519,12 +649,83 @@ export default function OrderDetail({ id }: { id: string }) {
                           />
                         </div>
 
+                        {requestType === "PRODUCT_FAULT" && (
+                          <div className="mt-4">
+                            <label className="text-xs font-medium text-[#5e473c]">
+                              Photos of the product fault
+                            </label>
+
+                            <p className="mt-1 text-xs text-[#8b7a70]">
+                              Upload 1–3 clear photos showing the problem. JPG,
+                              PNG, WEBP or GIF, up to 8 MB each.
+                            </p>
+
+                            <label className="mt-3 flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-[#d9cbc0] bg-[#fffaf4] px-4 py-6 text-sm text-[#5e473c] transition hover:bg-[#fcf8f3]">
+                              <span>
+                                {afterSalesImages.length === 0
+                                  ? "Choose photos"
+                                  : "Replace photos"}
+                              </span>
+
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp,image/gif"
+                                multiple
+                                className="hidden"
+                                disabled={busy}
+                                onChange={(e) => {
+                                  handleAfterSalesImages(e.target.files);
+                                  e.currentTarget.value = "";
+                                }}
+                              />
+                            </label>
+
+                            {afterSalesImages.length > 0 && (
+                              <div className="mt-4 grid grid-cols-3 gap-3">
+                                {afterSalesImages.map((image, index) => (
+                                  <div
+                                    key={`${image.filename}-${index}`}
+                                    className="relative overflow-hidden rounded-xl border border-[#eadfd5] bg-white"
+                                  >
+                                    <img
+                                      src={image.previewUrl}
+                                      alt={`Fault photo ${index + 1}`}
+                                      className="aspect-square w-full object-cover"
+                                    />
+
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setAfterSalesImages((current) =>
+                                          current.filter(
+                                            (_, imageIndex) =>
+                                              imageIndex !== index,
+                                          ),
+                                        );
+                                      }}
+                                      className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-sm text-[#5e473c] shadow-sm hover:bg-white disabled:opacity-50"
+                                      aria-label={`Remove photo ${index + 1}`}
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         <div className="mt-4 flex flex-wrap gap-2">
                           <button
                             type="button"
-                            disabled={busy}
+                            disabled={
+                              busy ||
+                              (requestType === "SIZE_REPLACEMENT" &&
+                                item.replacementSizes.length === 0)
+                            }
                             onClick={() => void submitAfterSales(item)}
-                            className="rounded-full bg-[#5e473c] px-5 py-3 text-sm text-white disabled:opacity-50"
+                            className="rounded-full bg-[#5e473c] px-5 py-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {busy ? "Submitting…" : "Submit request"}
                           </button>
@@ -593,7 +794,7 @@ export default function OrderDetail({ id }: { id: string }) {
           </div>
 
           {["PAID", "PROCESSING"].includes(o.status) && !o.trackingNumber && (
-            <div className="rounded-[2rem] border border-[#eadfd5] bg-white p-6">
+            <div className="rounded-4xl border border-[#eadfd5] bg-white p-6">
               <h2 className="font-serif text-2xl text-[#5e473c]">
                 Cancel order
               </h2>
@@ -616,7 +817,7 @@ export default function OrderDetail({ id }: { id: string }) {
           )}
         </section>
 
-        <aside className="rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6">
+        <aside className="rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-6">
           <h2 className="font-serif text-2xl text-[#5e473c]">Delivery</h2>
 
           <p className="mt-4 text-sm leading-6">

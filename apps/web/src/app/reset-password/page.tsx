@@ -79,7 +79,7 @@ export default function ResetPasswordPage() {
           You're all set
         </h1>
 
-        <div className="mt-10 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-7">
+        <div className="mt-10 rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-7">
           <p className="text-sm leading-6 text-[#5f554f]">
             Your password has been changed successfully. You can now sign in
             with your new password.
@@ -113,7 +113,7 @@ export default function ResetPasswordPage() {
 
       <form
         onSubmit={submit}
-        className="mt-10 space-y-5 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-7"
+        className="mt-10 space-y-5 rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-7"
       >
         <label className="block text-sm">
           New password

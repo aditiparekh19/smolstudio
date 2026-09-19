@@ -97,7 +97,7 @@ export default function CartPage() {
             ))}
           </div>
 
-          <aside className="h-fit rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6">
+          <aside className="h-fit rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-6">
             <p className="text-xs uppercase tracking-[0.2em] text-[#8b7a70]">
               Summary
             </p>

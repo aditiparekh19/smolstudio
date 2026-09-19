@@ -31,7 +31,7 @@ export default function ContactPage() {
           {/* Email */}{" "}
           <a
             href="mailto:hello@smolstudio.in"
-            className="group rounded-[2rem] border border-[#eadfd5] bg-[#fffdf9] p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(94,71,60,0.08)] sm:p-8"
+            className="group rounded-4xl border border-[#eadfd5] bg-[#fffdf9] p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(94,71,60,0.08)] sm:p-8"
           >
             {" "}
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#f3e9df] text-lg text-[#7d685c]">
@@ -60,7 +60,7 @@ export default function ContactPage() {
             href="https://wa.me/917709219989"
             target="_blank"
             rel="noopener noreferrer"
-            className="group rounded-[2rem] border border-[#eadfd5] bg-[#fffdf9] p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(94,71,60,0.08)] sm:p-8"
+            className="group rounded-4xl border border-[#eadfd5] bg-[#fffdf9] p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(94,71,60,0.08)] sm:p-8"
           >
             {" "}
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#f3e9df] text-sm text-[#7d685c]">
@@ -89,7 +89,7 @@ export default function ContactPage() {
             href="https://www.instagram.com/smolstudio_/"
             target="_blank"
             rel="noopener noreferrer"
-            className="group rounded-[2rem] border border-[#eadfd5] bg-[#fffdf9] p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(94,71,60,0.08)] sm:p-8"
+            className="group rounded-4xl border border-[#eadfd5] bg-[#fffdf9] p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(94,71,60,0.08)] sm:p-8"
           >
             {" "}
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#f3e9df] text-lg text-[#7d685c]">
@@ -120,7 +120,7 @@ export default function ContactPage() {
         {" "}
         <div className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-20">
           {" "}
-          <div className="grid gap-10 rounded-[2rem] bg-[#f3e9df] p-8 sm:p-10 md:grid-cols-[1fr_auto] md:items-center lg:p-12">
+          <div className="grid gap-10 rounded-4xl bg-[#f3e9df] p-8 sm:p-10 md:grid-cols-[1fr_auto] md:items-center lg:p-12">
             {" "}
             <div>
               {" "}

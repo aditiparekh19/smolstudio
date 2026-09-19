@@ -42,6 +42,13 @@ export function Header() {
           >
             Instagram
           </a>
+
+          <Link
+            href="/account/wishlist"
+            className="rounded-full px-4 py-2 text-[15px] text-[#6d5b51] transition-colors hover:bg-[#f0e4d8] hover:text-[#252321]"
+          >
+            Wishlist
+          </Link>
         </nav>
 
         {/* Right utilities */}

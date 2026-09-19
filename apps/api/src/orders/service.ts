@@ -6,6 +6,8 @@ import {
   sendOrderStatusEmail,
   sendStoreCreditRestoreEmail,
 } from "../notifications/service.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 
 export type ShippingAddress = {
   recipientName: string;
@@ -33,25 +35,30 @@ export type CheckoutTotals = {
   couponCode?: string | null;
 };
 
-export type AfterSalesRequestType =
-  | "PRODUCT_FAULT"
-  | "SIZE_REPLACEMENT";
+export type AfterSalesRequestType = "PRODUCT_FAULT" | "SIZE_REPLACEMENT";
+
+const RETURN_MEDIA_ROOT =
+  process.env.RETURN_MEDIA_ROOT ?? join(process.cwd(), "uploads", "returns");
+
+const RETURN_IMAGE_TYPES = new Map([
+  ["image/jpeg", ".jpg"],
+  ["image/png", ".png"],
+  ["image/webp", ".webp"],
+  ["image/gif", ".gif"],
+]);
+
+const MAX_RETURN_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_RETURN_IMAGES = 3;
 
 function roundMoney(value: number) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
 function razorpayConfigured() {
-  return Boolean(
-    env.RAZORPAY_KEY_ID &&
-      env.RAZORPAY_KEY_SECRET,
-  );
+  return Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
 }
 
-export async function razorpayRequest<T>(
-  path: string,
-  init: RequestInit = {},
-) {
+export async function razorpayRequest<T>(path: string, init: RequestInit = {}) {
   if (!razorpayConfigured()) {
     throw new Error(
       "Online payment is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to the API environment.",
@@ -62,17 +69,14 @@ export async function razorpayRequest<T>(
     `${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`,
   ).toString("base64");
 
-  const response = await fetch(
-    `https://api.razorpay.com/v1${path}`,
-    {
-      ...init,
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/json",
-        ...(init.headers ?? {}),
-      },
+  const response = await fetch(`https://api.razorpay.com/v1${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json",
+      ...(init.headers ?? {}),
     },
-  );
+  });
 
   const text = await response.text();
 
@@ -107,20 +111,14 @@ function verifySignature(
     return false;
   }
 
-  const generated = createHmac(
-    "sha256",
-    env.RAZORPAY_KEY_SECRET,
-  )
+  const generated = createHmac("sha256", env.RAZORPAY_KEY_SECRET)
     .update(`${orderId}|${paymentId}`)
     .digest("hex");
 
   const a = Buffer.from(generated);
   const b = Buffer.from(signature);
 
-  return (
-    a.length === b.length &&
-    timingSafeEqual(a, b)
-  );
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export function verifyWebhookSignature(
@@ -131,20 +129,14 @@ export function verifyWebhookSignature(
     return false;
   }
 
-  const generated = createHmac(
-    "sha256",
-    env.RAZORPAY_WEBHOOK_SECRET,
-  )
+  const generated = createHmac("sha256", env.RAZORPAY_WEBHOOK_SECRET)
     .update(rawBody)
     .digest("hex");
 
   const a = Buffer.from(generated);
   const b = Buffer.from(signature);
 
-  return (
-    a.length === b.length &&
-    timingSafeEqual(a, b)
-  );
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function validateAddress(address: ShippingAddress) {
@@ -162,18 +154,11 @@ function validateAddress(address: ShippingAddress) {
     }
   }
 
-  if (
-    !/^\d{5,10}$/.test(
-      String(address.postalCode).replace(/\s/g, ""),
-    )
-  ) {
+  if (!/^\d{5,10}$/.test(String(address.postalCode).replace(/\s/g, ""))) {
     throw new Error("Enter a valid PIN/postal code.");
   }
 
-  if (
-    address.phone &&
-    !/^[+\d][\d\s-]{7,18}$/.test(address.phone)
-  ) {
+  if (address.phone && !/^[+\d][\d\s-]{7,18}$/.test(address.phone)) {
     throw new Error("Enter a valid phone number.");
   }
 }
@@ -265,10 +250,8 @@ async function releaseOrderReservation(
   await tx.begin();
 
   try {
-    const rows = await new sql.Request(tx)
-      .input("orderId", orderId)
-      .query<any>(
-        `
+    const rows = await new sql.Request(tx).input("orderId", orderId).query<any>(
+      `
         SELECT
           id,
           variant_id variantId,
@@ -278,7 +261,7 @@ async function releaseOrderReservation(
           AND released_at IS NULL
           AND consumed_at IS NULL
         `,
-      );
+    );
 
     for (const row of rows.recordset) {
       await new sql.Request(tx)
@@ -371,10 +354,8 @@ async function consumeReservation(orderId: string) {
   await tx.begin();
 
   try {
-    const rows = await new sql.Request(tx)
-      .input("orderId", orderId)
-      .query<any>(
-        `
+    const rows = await new sql.Request(tx).input("orderId", orderId).query<any>(
+      `
         SELECT
           id,
           variant_id variantId,
@@ -384,7 +365,7 @@ async function consumeReservation(orderId: string) {
           AND released_at IS NULL
           AND consumed_at IS NULL
         `,
-      );
+    );
 
     for (const row of rows.recordset) {
       const updated = await new sql.Request(tx)
@@ -417,15 +398,13 @@ async function consumeReservation(orderId: string) {
         );
       }
 
-      await new sql.Request(tx)
-        .input("id", row.id)
-        .query(
-          `
+      await new sql.Request(tx).input("id", row.id).query(
+        `
           UPDATE inventory_reservations
           SET consumed_at = SYSUTCDATETIME()
           WHERE id = @id
           `,
-        );
+      );
     }
 
     await tx.commit();
@@ -439,17 +418,10 @@ async function consumeReservation(orderId: string) {
    DATABASE HELPERS
    ============================================================ */
 
-async function getTableColumns(
-  pool: sql.ConnectionPool,
-  tableName: string,
-) {
+async function getTableColumns(pool: sql.ConnectionPool, tableName: string) {
   const result = await pool
     .request()
-    .input(
-      "tableName",
-      sql.NVarChar(128),
-      tableName,
-    )
+    .input("tableName", sql.NVarChar(128), tableName)
     .query<{ columnName: string }>(
       `
       SELECT COLUMN_NAME AS columnName
@@ -460,23 +432,14 @@ async function getTableColumns(
     );
 
   return new Set(
-    result.recordset.map((row) =>
-      String(row.columnName).toLowerCase(),
-    ),
+    result.recordset.map((row) => String(row.columnName).toLowerCase()),
   );
 }
 
-async function getTableExists(
-  pool: sql.ConnectionPool,
-  tableName: string,
-) {
+async function getTableExists(pool: sql.ConnectionPool, tableName: string) {
   const result = await pool
     .request()
-    .input(
-      "tableName",
-      sql.NVarChar(128),
-      tableName,
-    )
+    .input("tableName", sql.NVarChar(128), tableName)
     .query<{ exists: number }>(
       `
       SELECT
@@ -491,9 +454,7 @@ async function getTableExists(
       `,
     );
 
-  return (
-    Number(result.recordset[0]?.exists ?? 0) === 1
-  );
+  return Number(result.recordset[0]?.exists ?? 0) === 1;
 }
 
 /* ============================================================
@@ -506,28 +467,14 @@ async function getCouponCategoryIds(
 ) {
   const ids = new Set<string>();
 
-  for (const relationTable of [
-    "coupon_categories",
-    "coupon_category",
-  ]) {
-    if (
-      !(await getTableExists(
-        pool,
-        relationTable,
-      ))
-    ) {
+  for (const relationTable of ["coupon_categories", "coupon_category"]) {
+    if (!(await getTableExists(pool, relationTable))) {
       continue;
     }
 
-    const columns = await getTableColumns(
-      pool,
-      relationTable,
-    );
+    const columns = await getTableColumns(pool, relationTable);
 
-    if (
-      !columns.has("coupon_id") ||
-      !columns.has("category_id")
-    ) {
+    if (!columns.has("coupon_id") || !columns.has("category_id")) {
       continue;
     }
 
@@ -553,10 +500,7 @@ async function getCouponCategoryIds(
     return ids;
   }
 
-  const couponColumns = await getTableColumns(
-    pool,
-    "coupons",
-  );
+  const couponColumns = await getTableColumns(pool, "coupons");
 
   if (couponColumns.has("category_id")) {
     const result = await pool
@@ -572,8 +516,7 @@ async function getCouponCategoryIds(
         `,
       );
 
-    const categoryId =
-      result.recordset[0]?.categoryId;
+    const categoryId = result.recordset[0]?.categoryId;
 
     if (categoryId != null) {
       ids.add(String(categoryId));
@@ -611,9 +554,7 @@ async function getEligibleSubtotal(
 
     return result.recordset.reduce(
       (sum: number, item: any) =>
-        sum +
-        Number(item.priceInr) *
-          Number(item.quantity),
+        sum + Number(item.priceInr) * Number(item.quantity),
       0,
     );
   }
@@ -622,28 +563,20 @@ async function getEligibleSubtotal(
     return 0;
   }
 
-  const productColumns = await getTableColumns(
-    pool,
-    "products",
-  );
+  const productColumns = await getTableColumns(pool, "products");
 
   if (productColumns.has("category_id")) {
-    const categoryValues =
-      Array.from(couponCategoryIds);
+    const categoryValues = Array.from(couponCategoryIds);
 
-    const request = pool
-      .request()
-      .input("customerId", customerId);
+    const request = pool.request().input("customerId", customerId);
 
-    const placeholders = categoryValues.map(
-      (id, index) => {
-        const name = `categoryId${index}`;
+    const placeholders = categoryValues.map((id, index) => {
+      const name = `categoryId${index}`;
 
-        request.input(name, id);
+      request.input(name, id);
 
-        return `@${name}`;
-      },
-    );
+      return `@${name}`;
+    });
 
     const result = await request.query<any>(
       `
@@ -666,44 +599,26 @@ async function getEligibleSubtotal(
 
     return result.recordset.reduce(
       (sum: number, item: any) =>
-        sum +
-        Number(item.priceInr) *
-          Number(item.quantity),
+        sum + Number(item.priceInr) * Number(item.quantity),
       0,
     );
   }
 
-  if (
-    await getTableExists(
-      pool,
-      "product_categories",
-    )
-  ) {
-    const pcColumns = await getTableColumns(
-      pool,
-      "product_categories",
-    );
+  if (await getTableExists(pool, "product_categories")) {
+    const pcColumns = await getTableColumns(pool, "product_categories");
 
-    if (
-      pcColumns.has("product_id") &&
-      pcColumns.has("category_id")
-    ) {
-      const categoryValues =
-        Array.from(couponCategoryIds);
+    if (pcColumns.has("product_id") && pcColumns.has("category_id")) {
+      const categoryValues = Array.from(couponCategoryIds);
 
-      const request = pool
-        .request()
-        .input("customerId", customerId);
+      const request = pool.request().input("customerId", customerId);
 
-      const placeholders = categoryValues.map(
-        (id, index) => {
-          const name = `categoryId${index}`;
+      const placeholders = categoryValues.map((id, index) => {
+        const name = `categoryId${index}`;
 
-          request.input(name, id);
+        request.input(name, id);
 
-          return `@${name}`;
-        },
-      );
+        return `@${name}`;
+      });
 
       const result = await request.query<any>(
         `
@@ -734,9 +649,7 @@ async function getEligibleSubtotal(
 
       return result.recordset.reduce(
         (sum: number, item: any) =>
-          sum +
-          Number(item.priceInr) *
-            Number(item.quantity),
+          sum + Number(item.priceInr) * Number(item.quantity),
         0,
       );
     }
@@ -754,9 +667,7 @@ async function validateCoupon(
   customerId: string | null | undefined,
   subtotal: number,
 ) {
-  const code = couponCode
-    ?.trim()
-    .toUpperCase();
+  const code = couponCode?.trim().toUpperCase();
 
   if (!code) {
     return {
@@ -766,32 +677,24 @@ async function validateCoupon(
   }
 
   if (!customerId) {
-    throw new Error(
-      "Please sign in to apply a coupon.",
-    );
+    throw new Error("Please sign in to apply a coupon.");
   }
 
   const pool = await getDb();
 
   if (code !== "WELCOME5") {
     try {
-      const dbContext = await pool
-        .request()
-        .query<any>(
-          `
+      const dbContext = await pool.request().query<any>(
+        `
           SELECT
             DB_NAME() AS dbName,
             @@SERVERNAME AS serverName
           `,
-        );
+      );
 
       const debugCoupon = await pool
         .request()
-        .input(
-          "debugCode",
-          sql.NVarChar(100),
-          code,
-        )
+        .input("debugCode", sql.NVarChar(100), code)
         .query<any>(
           `
             SELECT TOP 1
@@ -815,17 +718,12 @@ async function validateCoupon(
 
       console.log("[COUPON DEBUG]", {
         requestedCode: code,
-        database:
-          dbContext.recordset[0]?.dbName,
-        server:
-          dbContext.recordset[0]?.serverName,
+        database: dbContext.recordset[0]?.dbName,
+        server: dbContext.recordset[0]?.serverName,
         matches: debugCoupon.recordset,
       });
     } catch (error) {
-      console.warn(
-        "[COUPON DEBUG] diagnostic query failed",
-        error,
-      );
+      console.warn("[COUPON DEBUG] diagnostic query failed", error);
     }
   }
 
@@ -844,31 +742,21 @@ async function validateCoupon(
         `,
       );
 
-    const orderCount = Number(
-      result.recordset[0]?.orderCount ?? 0,
-    );
+    const orderCount = Number(result.recordset[0]?.orderCount ?? 0);
 
     if (orderCount > 0) {
-      throw new Error(
-        "WELCOME5 is available only on your first order.",
-      );
+      throw new Error("WELCOME5 is available only on your first order.");
     }
 
     return {
       code: "WELCOME5",
-      discountInr: roundMoney(
-        subtotal * 0.05,
-      ),
+      discountInr: roundMoney(subtotal * 0.05),
     };
   }
 
   /* ---------------- DATABASE COUPON ---------------- */
 
-  const couponColumns =
-    await getTableColumns(
-      pool,
-      "coupons",
-    );
+  const couponColumns = await getTableColumns(pool, "coupons");
 
   const requiredColumns = [
     "code",
@@ -879,45 +767,31 @@ async function validateCoupon(
 
   for (const column of requiredColumns) {
     if (!couponColumns.has(column)) {
-      throw new Error(
-        `Coupon configuration is missing the ${column} field.`,
-      );
+      throw new Error(`Coupon configuration is missing the ${column} field.`);
     }
   }
 
-  const minOrderColumn =
-    couponColumns.has("min_order_inr")
-      ? "min_order_inr"
-      : couponColumns.has(
-            "min_order_value",
-          )
-        ? "min_order_value"
-        : null;
+  const minOrderColumn = couponColumns.has("min_order_inr")
+    ? "min_order_inr"
+    : couponColumns.has("min_order_value")
+      ? "min_order_value"
+      : null;
 
-  const maxDiscountColumn =
-    couponColumns.has("max_discount_inr")
-      ? "max_discount_inr"
-      : couponColumns.has("max_discount")
-        ? "max_discount"
-        : null;
+  const maxDiscountColumn = couponColumns.has("max_discount_inr")
+    ? "max_discount_inr"
+    : couponColumns.has("max_discount")
+      ? "max_discount"
+      : null;
 
-  const minOrderSelect =
-    minOrderColumn
-      ? `[${minOrderColumn}]`
-      : "NULL";
+  const minOrderSelect = minOrderColumn ? `[${minOrderColumn}]` : "NULL";
 
-  const maxDiscountSelect =
-    maxDiscountColumn
-      ? `[${maxDiscountColumn}]`
-      : "NULL";
+  const maxDiscountSelect = maxDiscountColumn
+    ? `[${maxDiscountColumn}]`
+    : "NULL";
 
   const result = await pool
     .request()
-    .input(
-      "code",
-      sql.NVarChar(50),
-      code,
-    )
+    .input("code", sql.NVarChar(50), code)
     .query<any>(
       `
       SELECT TOP 1
@@ -928,25 +802,13 @@ async function validateCoupon(
         ${minOrderSelect} minOrderInr,
         ${maxDiscountSelect} maxDiscountInr,
         ${
-          couponColumns.has("max_redemptions")
-            ? "max_redemptions"
-            : "NULL"
+          couponColumns.has("max_redemptions") ? "max_redemptions" : "NULL"
         } maxRedemptions,
         ${
-          couponColumns.has("redeemed_count")
-            ? "redeemed_count"
-            : "0"
+          couponColumns.has("redeemed_count") ? "redeemed_count" : "0"
         } redeemedCount,
-        ${
-          couponColumns.has("starts_at")
-            ? "starts_at"
-            : "NULL"
-        } startsAt,
-        ${
-          couponColumns.has("ends_at")
-            ? "ends_at"
-            : "NULL"
-        } endsAt,
+        ${couponColumns.has("starts_at") ? "starts_at" : "NULL"} startsAt,
+        ${couponColumns.has("ends_at") ? "ends_at" : "NULL"} endsAt,
         is_active isActive
       FROM dbo.coupons
       WHERE UPPER(
@@ -955,94 +817,57 @@ async function validateCoupon(
       `,
     );
 
-  const coupon =
-    result.recordset[0];
+  const coupon = result.recordset[0];
 
   if (!coupon) {
-    throw new Error(
-      "Invalid coupon code.",
-    );
+    throw new Error("Invalid coupon code.");
   }
 
   if (!Boolean(coupon.isActive)) {
-    throw new Error(
-      "This coupon is inactive.",
-    );
+    throw new Error("This coupon is inactive.");
   }
 
   const now = new Date();
 
-  if (
-    coupon.startsAt &&
-    now < new Date(coupon.startsAt)
-  ) {
-    throw new Error(
-      "This coupon is not active yet.",
-    );
+  if (coupon.startsAt && now < new Date(coupon.startsAt)) {
+    throw new Error("This coupon is not active yet.");
   }
 
-  if (
-    coupon.endsAt &&
-    now > new Date(coupon.endsAt)
-  ) {
-    throw new Error(
-      "This coupon has expired.",
-    );
+  if (coupon.endsAt && now > new Date(coupon.endsAt)) {
+    throw new Error("This coupon has expired.");
   }
 
-  const maxRedemptions =
-    coupon.maxRedemptions;
+  const maxRedemptions = coupon.maxRedemptions;
 
-  const redeemedCount = Number(
-    coupon.redeemedCount ?? 0,
-  );
+  const redeemedCount = Number(coupon.redeemedCount ?? 0);
 
   if (
     maxRedemptions !== null &&
     maxRedemptions !== undefined &&
     Number(maxRedemptions) > 0 &&
-    redeemedCount >=
-      Number(maxRedemptions)
+    redeemedCount >= Number(maxRedemptions)
   ) {
-    throw new Error(
-      "This coupon has reached its usage limit.",
-    );
+    throw new Error("This coupon has reached its usage limit.");
   }
 
-  const couponCategoryIds =
-    await getCouponCategoryIds(
-      pool,
-      String(coupon.id),
-    );
+  const couponCategoryIds = await getCouponCategoryIds(pool, String(coupon.id));
 
-  const categoryRestrictionExists =
-    couponCategoryIds.size > 0;
+  const categoryRestrictionExists = couponCategoryIds.size > 0;
 
-  const eligibleSubtotal =
-    await getEligibleSubtotal(
-      pool,
-      customerId,
-      couponCategoryIds,
-      categoryRestrictionExists,
-    );
-
-  if (
-    categoryRestrictionExists &&
-    eligibleSubtotal <= 0
-  ) {
-    throw new Error(
-      "This coupon does not apply to the products in your bag.",
-    );
-  }
-
-  const minOrderValue = Number(
-    coupon.minOrderInr ?? 0,
+  const eligibleSubtotal = await getEligibleSubtotal(
+    pool,
+    customerId,
+    couponCategoryIds,
+    categoryRestrictionExists,
   );
 
-  const minimumBase =
-    categoryRestrictionExists
-      ? eligibleSubtotal
-      : subtotal;
+  if (categoryRestrictionExists && eligibleSubtotal <= 0) {
+    throw new Error("This coupon does not apply to the products in your bag.");
+  }
+
+  const minOrderValue = Number(coupon.minOrderInr ?? 0);
+
+  const minimumBase = categoryRestrictionExists ? eligibleSubtotal : subtotal;
 
   if (minimumBase < minOrderValue) {
     throw new Error(
@@ -1054,67 +879,40 @@ async function validateCoupon(
 
   let discountInr = 0;
 
-  const discountType = String(
-    coupon.discountType ?? "",
-  ).toUpperCase();
+  const discountType = String(coupon.discountType ?? "").toUpperCase();
 
-  const discountValue = Number(
-    coupon.discountValue ?? 0,
-  );
+  const discountValue = Number(coupon.discountValue ?? 0);
 
-  if (
-    !Number.isFinite(discountValue) ||
-    discountValue < 0
-  ) {
-    throw new Error(
-      "This coupon has an invalid discount value.",
-    );
+  if (!Number.isFinite(discountValue) || discountValue < 0) {
+    throw new Error("This coupon has an invalid discount value.");
   }
 
   if (discountType === "PERCENT") {
     if (discountValue > 100) {
-      throw new Error(
-        "Coupon percentage cannot exceed 100%.",
-      );
+      throw new Error("Coupon percentage cannot exceed 100%.");
     }
 
-    discountInr = roundMoney(
-      eligibleSubtotal *
-        (discountValue / 100),
-    );
+    discountInr = roundMoney(eligibleSubtotal * (discountValue / 100));
   } else if (discountType === "FIXED") {
-    discountInr = Math.min(
-      discountValue,
-      eligibleSubtotal,
-    );
+    discountInr = Math.min(discountValue, eligibleSubtotal);
   } else {
-    throw new Error(
-      "This coupon has an invalid discount type.",
-    );
+    throw new Error("This coupon has an invalid discount type.");
   }
 
   const maxDiscountInr =
-    coupon.maxDiscountInr == null
-      ? null
-      : Number(coupon.maxDiscountInr);
+    coupon.maxDiscountInr == null ? null : Number(coupon.maxDiscountInr);
 
   if (
     maxDiscountInr !== null &&
     Number.isFinite(maxDiscountInr) &&
     maxDiscountInr >= 0
   ) {
-    discountInr = Math.min(
-      discountInr,
-      maxDiscountInr,
-    );
+    discountInr = Math.min(discountInr, maxDiscountInr);
   }
 
   return {
-    code: String(coupon.code)
-      .trim()
-      .toUpperCase(),
-    discountInr:
-      roundMoney(discountInr),
+    code: String(coupon.code).trim().toUpperCase(),
+    discountInr: roundMoney(discountInr),
   };
 }
 
@@ -1128,10 +926,7 @@ async function ensureStoreCreditAccount(
 ) {
   const existing = await pool
     .request()
-    .input(
-      "customerId",
-      customerId,
-    )
+    .input("customerId", customerId)
     .query<any>(
       `
       SELECT TOP 1
@@ -1152,10 +947,7 @@ async function ensureStoreCreditAccount(
   await pool
     .request()
     .input("id", id)
-    .input(
-      "customerId",
-      customerId,
-    )
+    .input("customerId", customerId)
     .query(
       `
       INSERT INTO store_credit_accounts(
@@ -1182,11 +974,7 @@ export async function getStoreCreditInfo(
   pool: sql.ConnectionPool,
   customerId: string,
 ) {
-  const account =
-    await ensureStoreCreditAccount(
-      pool,
-      customerId,
-    );
+  const account = await ensureStoreCreditAccount(pool, customerId);
 
   /*
    * Pending-payment orders temporarily reserve
@@ -1194,15 +982,11 @@ export async function getStoreCreditInfo(
    *
    * Once the order is paid, the balance is deducted.
    */
-  const reservedResult =
-    await pool
-      .request()
-      .input(
-        "customerId",
-        customerId,
-      )
-      .query<any>(
-        `
+  const reservedResult = await pool
+    .request()
+    .input("customerId", customerId)
+    .query<any>(
+      `
         SELECT
           COALESCE(
             SUM(
@@ -1216,35 +1000,21 @@ export async function getStoreCreditInfo(
           AND store_credit_applied_inr > 0
           AND store_credit_released_at IS NULL
         `,
-      );
+    );
 
-  const balanceInr = roundMoney(
-    Number(account.balanceInr ?? 0),
-  );
+  const balanceInr = roundMoney(Number(account.balanceInr ?? 0));
 
   const reservedInr = roundMoney(
-    Number(
-      reservedResult.recordset[0]
-        ?.reservedInr ?? 0,
-    ),
+    Number(reservedResult.recordset[0]?.reservedInr ?? 0),
   );
 
-  const availableInr = Math.max(
-    0,
-    roundMoney(
-      balanceInr - reservedInr,
-    ),
-  );
+  const availableInr = Math.max(0, roundMoney(balanceInr - reservedInr));
 
-  const transactionsResult =
-    await pool
-      .request()
-      .input(
-        "customerId",
-        customerId,
-      )
-      .query<any>(
-        `
+  const transactionsResult = await pool
+    .request()
+    .input("customerId", customerId)
+    .query<any>(
+      `
         SELECT
           t.id,
           t.transaction_type AS type,
@@ -1259,39 +1029,22 @@ export async function getStoreCreditInfo(
         WHERE a.customer_id = @customerId
         ORDER BY t.created_at DESC
         `,
-      );
+    );
 
   return {
     accountId: account.id,
     balanceInr,
     reservedInr,
     availableInr,
-    transactions:
-      transactionsResult.recordset.map(
-        (transaction) => ({
-          id: transaction.id,
-          type: transaction.type,
-          amountInr: roundMoney(
-            Number(
-              transaction.amountInr ?? 0,
-            ),
-          ),
-          balanceAfterInr: roundMoney(
-            Number(
-              transaction.balanceAfterInr ??
-                0,
-            ),
-          ),
-          orderId:
-            transaction.orderId ?? null,
-          description:
-            transaction.description ??
-            null,
-          createdAt: new Date(
-            transaction.createdAt,
-          ).toISOString(),
-        }),
-      ),
+    transactions: transactionsResult.recordset.map((transaction) => ({
+      id: transaction.id,
+      type: transaction.type,
+      amountInr: roundMoney(Number(transaction.amountInr ?? 0)),
+      balanceAfterInr: roundMoney(Number(transaction.balanceAfterInr ?? 0)),
+      orderId: transaction.orderId ?? null,
+      description: transaction.description ?? null,
+      createdAt: new Date(transaction.createdAt).toISOString(),
+    })),
   };
 }
 
@@ -1300,68 +1053,28 @@ function calculateTotals(
   discount: number,
   storeCreditBalance = 0,
 ): CheckoutTotals {
-  const taxable = Math.max(
-    0,
-    roundMoney(
-      subtotal - discount,
-    ),
-  );
+  const taxable = Math.max(0, roundMoney(subtotal - discount));
 
-  const shipping =
-    taxable <= 499 ? 80 : 0;
+  const shipping = taxable <= 499 ? 80 : 0;
 
-  const tax = roundMoney(
-    (taxable *
-      env.GST_RATE_PERCENT) /
-      100,
-  );
+  const tax = roundMoney((taxable * env.GST_RATE_PERCENT) / 100);
 
-  const totalInr = Math.max(
-    0,
-    roundMoney(
-      taxable + shipping + tax,
-    ),
-  );
+  const totalInr = Math.max(0, roundMoney(taxable + shipping + tax));
 
-  const availableCredit =
-    Math.max(
-      0,
-      roundMoney(
-        storeCreditBalance,
-      ),
-    );
+  const availableCredit = Math.max(0, roundMoney(storeCreditBalance));
 
-  const storeCreditAppliedInr =
-    Math.min(
-      availableCredit,
-      totalInr,
-    );
+  const storeCreditAppliedInr = Math.min(availableCredit, totalInr);
 
-  const payableInr =
-    Math.max(
-      0,
-      roundMoney(
-        totalInr -
-          storeCreditAppliedInr,
-      ),
-    );
+  const payableInr = Math.max(0, roundMoney(totalInr - storeCreditAppliedInr));
 
   return {
-    subtotalInr:
-      roundMoney(subtotal),
-    shippingInr:
-      roundMoney(shipping),
-    discountInr:
-      roundMoney(discount),
-    taxInr:
-      roundMoney(tax),
+    subtotalInr: roundMoney(subtotal),
+    shippingInr: roundMoney(shipping),
+    discountInr: roundMoney(discount),
+    taxInr: roundMoney(tax),
     totalInr,
-    storeCreditBalanceInr:
-      availableCredit,
-    storeCreditAppliedInr:
-      roundMoney(
-        storeCreditAppliedInr,
-      ),
+    storeCreditBalanceInr: availableCredit,
+    storeCreditAppliedInr: roundMoney(storeCreditAppliedInr),
     payableInr,
   };
 }
@@ -1380,10 +1093,7 @@ export async function previewCheckout(
 
   const items = await pool
     .request()
-    .input(
-      "customerId",
-      customerId,
-    )
+    .input("customerId", customerId)
     .query<any>(
       `
       SELECT
@@ -1403,39 +1113,21 @@ export async function previewCheckout(
     );
 
   if (!items.recordset.length) {
-    throw new Error(
-      "Your bag is empty.",
-    );
+    throw new Error("Your bag is empty.");
   }
 
-  const subtotal =
-    items.recordset.reduce(
-      (sum: number, item: any) =>
-        sum +
-        Number(item.priceInr) *
-          Number(item.quantity),
-      0,
-    );
+  const subtotal = items.recordset.reduce(
+    (sum: number, item: any) =>
+      sum + Number(item.priceInr) * Number(item.quantity),
+    0,
+  );
 
-  const coupon =
-    await validateCoupon(
-      couponCode,
-      customerId,
-      subtotal,
-    );
+  const coupon = await validateCoupon(couponCode, customerId, subtotal);
 
-  const credit =
-    await getStoreCreditInfo(
-      pool,
-      customerId,
-    );
+  const credit = await getStoreCreditInfo(pool, customerId);
 
   return {
-    ...calculateTotals(
-      subtotal,
-      coupon.discountInr,
-      credit.availableInr,
-    ),
+    ...calculateTotals(subtotal, coupon.discountInr, credit.availableInr),
     couponCode: coupon.code,
   };
 }
@@ -1458,10 +1150,7 @@ export async function createPaymentOrder(
 
   const items = await pool
     .request()
-    .input(
-      "customerId",
-      customerId,
-    )
+    .input("customerId", customerId)
     .query<any>(
       `
       SELECT
@@ -1493,58 +1182,37 @@ export async function createPaymentOrder(
     );
 
   if (!items.recordset.length) {
-    throw new Error(
-      "Your bag is empty.",
-    );
+    throw new Error("Your bag is empty.");
   }
 
-  const subtotal =
-    items.recordset.reduce(
-      (sum: number, item: any) =>
-        sum +
-        Number(item.priceInr) *
-          Number(item.quantity),
-      0,
-    );
+  const subtotal = items.recordset.reduce(
+    (sum: number, item: any) =>
+      sum + Number(item.priceInr) * Number(item.quantity),
+    0,
+  );
 
-  const coupon =
-    await validateCoupon(
-      address.couponCode,
-      customerId,
-      subtotal,
-    );
+  const coupon = await validateCoupon(address.couponCode, customerId, subtotal);
 
-  const credit =
-    await getStoreCreditInfo(
-      pool,
-      customerId,
-    );
+  const credit = await getStoreCreditInfo(pool, customerId);
 
-  const totals =
-    calculateTotals(
-      subtotal,
-      coupon.discountInr,
-      credit.availableInr,
-    );
+  const totals = calculateTotals(
+    subtotal,
+    coupon.discountInr,
+    credit.availableInr,
+  );
 
   const orderId = randomUUID();
 
-  const orderNumber =
-    `SS-${new Date()
-      .toISOString()
-      .slice(0, 10)
-      .replace(/-/g, "")}-${orderId
-      .slice(0, 8)
-      .toUpperCase()}`;
+  const orderNumber = `SS-${new Date()
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, "")}-${orderId.slice(0, 8).toUpperCase()}`;
 
   const expires = new Date(
-    Date.now() +
-      env.PAYMENT_RESERVATION_MINUTES *
-        60_000,
+    Date.now() + env.PAYMENT_RESERVATION_MINUTES * 60_000,
   );
 
-  const tx =
-    new sql.Transaction(pool);
+  const tx = new sql.Transaction(pool);
 
   await tx.begin();
 
@@ -1554,21 +1222,13 @@ export async function createPaymentOrder(
      * reserving credit so two simultaneous
      * checkouts cannot reserve the same balance.
      */
-    let lockedCreditBalance =
-      credit.availableInr;
+    let lockedCreditBalance = credit.availableInr;
 
-    if (
-      totals.storeCreditAppliedInr >
-      0
-    ) {
-      const account =
-        await new sql.Request(tx)
-          .input(
-            "customerId",
-            customerId,
-          )
-          .query<any>(
-            `
+    if (totals.storeCreditAppliedInr > 0) {
+      const account = await new sql.Request(tx)
+        .input("customerId", customerId)
+        .query<any>(
+          `
             SELECT TOP 1
               id,
               balance_inr balanceInr
@@ -1577,22 +1237,16 @@ export async function createPaymentOrder(
             WHERE customer_id =
               @customerId
             `,
-          );
+        );
 
       if (!account.recordset[0]) {
-        throw new Error(
-          "Store credit account could not be found.",
-        );
+        throw new Error("Store credit account could not be found.");
       }
 
-      const reserved =
-        await new sql.Request(tx)
-          .input(
-            "customerId",
-            customerId,
-          )
-          .query<any>(
-            `
+      const reserved = await new sql.Request(tx)
+        .input("customerId", customerId)
+        .query<any>(
+          `
             SELECT
               COALESCE(
                 SUM(
@@ -1610,44 +1264,29 @@ export async function createPaymentOrder(
               AND store_credit_released_at
                 IS NULL
             `,
-          );
-
-      lockedCreditBalance =
-        Math.max(
-          0,
-          roundMoney(
-            Number(
-              account.recordset[0]
-                .balanceInr ?? 0,
-            ) -
-              Number(
-                reserved.recordset[0]
-                  ?.reservedInr ?? 0,
-              ),
-          ),
         );
+
+      lockedCreditBalance = Math.max(
+        0,
+        roundMoney(
+          Number(account.recordset[0].balanceInr ?? 0) -
+            Number(reserved.recordset[0]?.reservedInr ?? 0),
+        ),
+      );
     }
 
-    const finalTotals =
-      calculateTotals(
-        subtotal,
-        coupon.discountInr,
-        lockedCreditBalance,
-      );
+    const finalTotals = calculateTotals(
+      subtotal,
+      coupon.discountInr,
+      lockedCreditBalance,
+    );
 
     for (const item of items.recordset) {
-      const lock =
-        await new sql.Request(tx)
-          .input(
-            "variantId",
-            item.variantId,
-          )
-          .input(
-            "quantity",
-            item.quantity,
-          )
-          .query<any>(
-            `
+      const lock = await new sql.Request(tx)
+        .input("variantId", item.variantId)
+        .input("quantity", item.quantity)
+        .query<any>(
+          `
             UPDATE inventory
             SET
               quantity_reserved =
@@ -1665,7 +1304,7 @@ export async function createPaymentOrder(
                   quantity_reserved >=
                   @quantity
             `,
-          );
+        );
 
       if (!lock.recordset.length) {
         throw new Error(
@@ -1681,59 +1320,21 @@ export async function createPaymentOrder(
      * Keep the order PENDING_PAYMENT until finalization
      * below, then immediately finalize it.
      */
-    const paymentStatus =
-      finalTotals.payableInr <= 0
-        ? "PENDING"
-        : "PENDING";
+    const paymentStatus = finalTotals.payableInr <= 0 ? "PENDING" : "PENDING";
 
     await new sql.Request(tx)
       .input("id", orderId)
-      .input(
-        "orderNumber",
-        orderNumber,
-      )
-      .input(
-        "customerId",
-        customerId,
-      )
-      .input(
-        "subtotal",
-        finalTotals.subtotalInr,
-      )
-      .input(
-        "shipping",
-        finalTotals.shippingInr,
-      )
-      .input(
-        "discount",
-        finalTotals.discountInr,
-      )
-      .input(
-        "tax",
-        finalTotals.taxInr,
-      )
-      .input(
-        "total",
-        finalTotals.totalInr,
-      )
-      .input(
-        "storeCreditApplied",
-        finalTotals.storeCreditAppliedInr,
-      )
-      .input(
-        "address",
-        JSON.stringify(address),
-      )
-      .input(
-        "paymentStatus",
-        paymentStatus,
-      )
-      .input(
-        "coupon",
-        address.couponCode
-          ?.trim()
-          .toUpperCase() || null,
-      )
+      .input("orderNumber", orderNumber)
+      .input("customerId", customerId)
+      .input("subtotal", finalTotals.subtotalInr)
+      .input("shipping", finalTotals.shippingInr)
+      .input("discount", finalTotals.discountInr)
+      .input("tax", finalTotals.taxInr)
+      .input("total", finalTotals.totalInr)
+      .input("storeCreditApplied", finalTotals.storeCreditAppliedInr)
+      .input("address", JSON.stringify(address))
+      .input("paymentStatus", paymentStatus)
+      .input("coupon", address.couponCode?.trim().toUpperCase() || null)
       .query(
         `
         INSERT INTO orders(
@@ -1777,10 +1378,7 @@ export async function createPaymentOrder(
 
     await new sql.Request(tx)
       .input("id", orderId)
-      .input(
-        "paymentStatus",
-        paymentStatus,
-      )
+      .input("paymentStatus", paymentStatus)
       .query(
         `
         UPDATE orders
@@ -1795,40 +1393,16 @@ export async function createPaymentOrder(
 
     for (const item of items.recordset) {
       await new sql.Request(tx)
-        .input(
-          "id",
-          randomUUID(),
-        )
-        .input(
-          "orderId",
-          orderId,
-        )
-        .input(
-          "variantId",
-          item.variantId,
-        )
-        .input(
-          "productName",
-          item.productName,
-        )
-        .input(
-          "sku",
-          item.sku,
-        )
-        .input(
-          "quantity",
-          item.quantity,
-        )
-        .input(
-          "unitPrice",
-          item.priceInr,
-        )
+        .input("id", randomUUID())
+        .input("orderId", orderId)
+        .input("variantId", item.variantId)
+        .input("productName", item.productName)
+        .input("sku", item.sku)
+        .input("quantity", item.quantity)
+        .input("unitPrice", item.priceInr)
         .input(
           "totalPrice",
-          roundMoney(
-            Number(item.priceInr) *
-              Number(item.quantity),
-          ),
+          roundMoney(Number(item.priceInr) * Number(item.quantity)),
         )
         .query(
           `
@@ -1858,26 +1432,11 @@ export async function createPaymentOrder(
 
     for (const item of items.recordset) {
       await new sql.Request(tx)
-        .input(
-          "id",
-          randomUUID(),
-        )
-        .input(
-          "orderId",
-          orderId,
-        )
-        .input(
-          "variantId",
-          item.variantId,
-        )
-        .input(
-          "quantity",
-          item.quantity,
-        )
-        .input(
-          "expiresAt",
-          expires,
-        )
+        .input("id", randomUUID())
+        .input("orderId", orderId)
+        .input("variantId", item.variantId)
+        .input("quantity", item.quantity)
+        .input("expiresAt", expires)
         .query(
           `
           INSERT INTO inventory_reservations(
@@ -1899,14 +1458,8 @@ export async function createPaymentOrder(
     }
 
     await new sql.Request(tx)
-      .input(
-        "orderId",
-        orderId,
-      )
-      .input(
-        "status",
-        "PENDING_PAYMENT",
-      )
+      .input("orderId", orderId)
+      .input("status", "PENDING_PAYMENT")
       .query(
         `
         INSERT INTO order_status_history(
@@ -1934,10 +1487,7 @@ export async function createPaymentOrder(
    * No Razorpay order is created.
    */
   if (totals.payableInr <= 0) {
-    await finalizePaidOrder(
-      orderId,
-      "STORE_CREDIT",
-    );
+    await finalizePaidOrder(orderId, "STORE_CREDIT");
 
     return {
       orderId,
@@ -1945,8 +1495,7 @@ export async function createPaymentOrder(
       amount: 0,
       currency: "INR",
       razorpayOrderId: "",
-      keyId:
-        env.RAZORPAY_KEY_ID || "",
+      keyId: env.RAZORPAY_KEY_ID || "",
       ...totals,
     };
   }
@@ -1958,32 +1507,22 @@ export async function createPaymentOrder(
    * store credit has been applied.
    */
   try {
-    const razorOrder =
-      await razorpayRequest<any>(
-        "/orders",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            amount: Math.round(
-              totals.payableInr * 100,
-            ),
-            currency: "INR",
-            receipt: orderNumber,
-            notes: {
-              smolstudioOrderId:
-                orderId,
-            },
-          }),
+    const razorOrder = await razorpayRequest<any>("/orders", {
+      method: "POST",
+      body: JSON.stringify({
+        amount: Math.round(totals.payableInr * 100),
+        currency: "INR",
+        receipt: orderNumber,
+        notes: {
+          smolstudioOrderId: orderId,
         },
-      );
+      }),
+    });
 
     await pool
       .request()
       .input("id", orderId)
-      .input(
-        "paymentOrderId",
-        razorOrder.id,
-      )
+      .input("paymentOrderId", razorOrder.id)
       .query(
         `
         UPDATE orders
@@ -1999,14 +1538,10 @@ export async function createPaymentOrder(
     return {
       orderId,
       orderNumber,
-      amount: Math.round(
-        totals.payableInr * 100,
-      ),
+      amount: Math.round(totals.payableInr * 100),
       currency: "INR",
-      razorpayOrderId:
-        razorOrder.id,
-      keyId:
-        env.RAZORPAY_KEY_ID!,
+      razorpayOrderId: razorOrder.id,
+      keyId: env.RAZORPAY_KEY_ID!,
       ...totals,
     };
   } catch (error) {
@@ -2030,21 +1565,16 @@ async function consumeStoreCredit(
   customerId: string,
   amountInr: number,
 ) {
-  const amount =
-    roundMoney(amountInr);
+  const amount = roundMoney(amountInr);
 
   if (amount <= 0) {
     return;
   }
 
-  const account =
-    await new sql.Request(tx)
-      .input(
-        "customerId",
-        customerId,
-      )
-      .query<any>(
-        `
+  const account = await new sql.Request(tx)
+    .input("customerId", customerId)
+    .query<any>(
+      `
         SELECT TOP 1
           id,
           balance_inr balanceInr
@@ -2053,45 +1583,27 @@ async function consumeStoreCredit(
         WHERE customer_id =
           @customerId
         `,
-      );
+    );
 
-  const row =
-    account.recordset[0];
+  const row = account.recordset[0];
 
   if (!row) {
-    throw new Error(
-      "Store credit account not found.",
-    );
+    throw new Error("Store credit account not found.");
   }
 
-  const currentBalance =
-    roundMoney(
-      Number(row.balanceInr ?? 0),
-    );
+  const currentBalance = roundMoney(Number(row.balanceInr ?? 0));
 
   if (currentBalance < amount) {
-    throw new Error(
-      "Insufficient store credit balance.",
-    );
+    throw new Error("Insufficient store credit balance.");
   }
 
-  const newBalance =
-    roundMoney(
-      currentBalance - amount,
-    );
+  const newBalance = roundMoney(currentBalance - amount);
 
-  const update =
-    await new sql.Request(tx)
-      .input(
-        "accountId",
-        row.id,
-      )
-      .input(
-        "amount",
-        amount,
-      )
-      .query(
-        `
+  const update = await new sql.Request(tx)
+    .input("accountId", row.id)
+    .input("amount", amount)
+    .query(
+      `
         UPDATE store_credit_accounts
         SET
           balance_inr =
@@ -2104,43 +1616,20 @@ async function consumeStoreCredit(
           AND balance_inr >=
               @amount
         `,
-      );
+    );
 
   if (!update.rowsAffected[0]) {
-    throw new Error(
-      "Store credit balance changed. Please retry checkout.",
-    );
+    throw new Error("Store credit balance changed. Please retry checkout.");
   }
 
   await new sql.Request(tx)
-    .input(
-      "id",
-      randomUUID(),
-    )
-    .input(
-      "accountId",
-      row.id,
-    )
-    .input(
-      "transactionType",
-      "ORDER_PAYMENT",
-    )
-    .input(
-      "amount",
-      -amount,
-    )
-    .input(
-      "balanceAfter",
-      newBalance,
-    )
-    .input(
-      "orderId",
-      orderId,
-    )
-    .input(
-      "description",
-      "Store credit applied to order.",
-    )
+    .input("id", randomUUID())
+    .input("accountId", row.id)
+    .input("transactionType", "ORDER_PAYMENT")
+    .input("amount", -amount)
+    .input("balanceAfter", newBalance)
+    .input("orderId", orderId)
+    .input("description", "Store credit applied to order.")
     .query(
       `
       INSERT INTO store_credit_transactions(
@@ -2175,25 +1664,18 @@ async function consumeStoreCredit(
  * - the order does not use store credit, or
  * - the store credit was already restored.
  */
-async function restoreStoreCreditForOrder(
-  orderId: string,
-) {
+async function restoreStoreCreditForOrder(orderId: string) {
   const pool = await getDb();
 
-  const tx =
-    new sql.Transaction(pool);
+  const tx = new sql.Transaction(pool);
 
   await tx.begin();
 
   try {
-    const order =
-      await new sql.Request(tx)
-        .input(
-          "orderId",
-          orderId,
-        )
-        .query<any>(
-          `
+    const order = await new sql.Request(tx)
+      .input("orderId", orderId)
+      .query<any>(
+        `
           SELECT TOP 1
             customer_id customerId,
             store_credit_applied_inr
@@ -2202,17 +1684,11 @@ async function restoreStoreCreditForOrder(
           FROM orders
           WHERE id = @orderId
           `,
-        );
+      );
 
-    const row =
-      order.recordset[0];
+    const row = order.recordset[0];
 
-    if (
-      !row ||
-      Number(
-        row.storeCreditApplied ?? 0,
-      ) <= 0
-    ) {
+    if (!row || Number(row.storeCreditApplied ?? 0) <= 0) {
       await tx.commit();
       return null;
     }
@@ -2222,40 +1698,27 @@ async function restoreStoreCreditForOrder(
      *
      * Never restore the same store credit twice.
      */
-    const alreadyRestored =
-      await new sql.Request(tx)
-        .input(
-          "orderId",
-          orderId,
-        )
-        .query<any>(
-          `
+    const alreadyRestored = await new sql.Request(tx)
+      .input("orderId", orderId)
+      .query<any>(
+        `
           SELECT COUNT(*) AS count
           FROM store_credit_transactions
           WHERE order_id = @orderId
             AND transaction_type =
               'ORDER_CREDIT_RESTORE'
           `,
-        );
+      );
 
-    if (
-      Number(
-        alreadyRestored.recordset[0]
-          ?.count ?? 0,
-      ) > 0
-    ) {
+    if (Number(alreadyRestored.recordset[0]?.count ?? 0) > 0) {
       await tx.commit();
       return null;
     }
 
-    const account =
-      await new sql.Request(tx)
-        .input(
-          "customerId",
-          row.customerId,
-        )
-        .query<any>(
-          `
+    const account = await new sql.Request(tx)
+      .input("customerId", row.customerId)
+      .query<any>(
+        `
           SELECT TOP 1
             id,
             balance_inr balanceInr
@@ -2264,43 +1727,24 @@ async function restoreStoreCreditForOrder(
           WHERE customer_id =
             @customerId
           `,
-        );
+      );
 
     if (!account.recordset[0]) {
-      throw new Error(
-        "Store credit account not found.",
-      );
+      throw new Error("Store credit account not found.");
     }
 
-    const accountRow =
-      account.recordset[0];
+    const accountRow = account.recordset[0];
 
-    const amount =
-      roundMoney(
-        Number(
-          row.storeCreditApplied,
-        ),
-      );
+    const amount = roundMoney(Number(row.storeCreditApplied));
 
-    const newBalance =
-      roundMoney(
-        Number(
-          accountRow.balanceInr ?? 0,
-        ) + amount,
-      );
+    const newBalance = roundMoney(Number(accountRow.balanceInr ?? 0) + amount);
 
     /*
      * Restore the balance.
      */
     await new sql.Request(tx)
-      .input(
-        "accountId",
-        accountRow.id,
-      )
-      .input(
-        "amount",
-        amount,
-      )
+      .input("accountId", accountRow.id)
+      .input("amount", amount)
       .query(
         `
         UPDATE store_credit_accounts
@@ -2319,34 +1763,13 @@ async function restoreStoreCreditForOrder(
      * Record the restoration.
      */
     await new sql.Request(tx)
-      .input(
-        "id",
-        randomUUID(),
-      )
-      .input(
-        "accountId",
-        accountRow.id,
-      )
-      .input(
-        "transactionType",
-        "ORDER_CREDIT_RESTORE",
-      )
-      .input(
-        "amount",
-        amount,
-      )
-      .input(
-        "balanceAfter",
-        newBalance,
-      )
-      .input(
-        "orderId",
-        orderId,
-      )
-      .input(
-        "description",
-        "Store credit restored after order cancellation.",
-      )
+      .input("id", randomUUID())
+      .input("accountId", accountRow.id)
+      .input("transactionType", "ORDER_CREDIT_RESTORE")
+      .input("amount", amount)
+      .input("balanceAfter", newBalance)
+      .input("orderId", orderId)
+      .input("description", "Store credit restored after order cancellation.")
       .query(
         `
         INSERT INTO store_credit_transactions(
@@ -2373,13 +1796,8 @@ async function restoreStoreCreditForOrder(
     /*
      * Mark the credit as released for this order.
      */
-    await new sql.Request(tx)
-      .input(
-        "orderId",
-        orderId,
-      )
-      .query(
-        `
+    await new sql.Request(tx).input("orderId", orderId).query(
+      `
         UPDATE orders
         SET
           store_credit_released_at =
@@ -2388,7 +1806,7 @@ async function restoreStoreCreditForOrder(
             SYSUTCDATETIME()
         WHERE id = @orderId
         `,
-      );
+    );
 
     await tx.commit();
 
@@ -2397,8 +1815,7 @@ async function restoreStoreCreditForOrder(
      */
     return {
       amount,
-      balanceAfter:
-        newBalance,
+      balanceAfter: newBalance,
     };
   } catch (error) {
     await tx.rollback();
@@ -2410,18 +1827,14 @@ async function restoreStoreCreditForOrder(
    FINALIZE PAID ORDER
    ============================================================ */
 
-async function finalizePaidOrder(
-  orderId: string,
-  paymentId: string,
-) {
+async function finalizePaidOrder(orderId: string, paymentId: string) {
   const pool = await getDb();
 
-  const existing =
-    await pool
-      .request()
-      .input("id", orderId)
-      .query<any>(
-        `
+  const existing = await pool
+    .request()
+    .input("id", orderId)
+    .query<any>(
+      `
         SELECT TOP 1
           payment_status paymentStatus,
           status,
@@ -2433,30 +1846,23 @@ async function finalizePaidOrder(
         FROM orders WITH (UPDLOCK,HOLDLOCK)
         WHERE id = @id
         `,
-      );
+    );
 
-  const row =
-    existing.recordset[0];
+  const row = existing.recordset[0];
 
   if (!row) {
-    throw new Error(
-      "Order not found.",
-    );
+    throw new Error("Order not found.");
   }
 
-  if (
-    row.paymentStatus ===
-    "CAPTURED"
-  ) {
+  if (row.paymentStatus === "CAPTURED") {
     return row;
   }
 
-  const claimed =
-    await pool
-      .request()
-      .input("id", orderId)
-      .query(
-        `
+  const claimed = await pool
+    .request()
+    .input("id", orderId)
+    .query(
+      `
         UPDATE orders
         SET
           payment_status =
@@ -2467,7 +1873,7 @@ async function finalizePaidOrder(
           AND payment_status =
             'PENDING'
         `,
-      );
+    );
 
   if (!claimed.rowsAffected[0]) {
     const latest = (
@@ -2491,10 +1897,8 @@ async function finalizePaidOrder(
     ).recordset[0];
 
     if (
-      latest?.paymentStatus ===
-        "CAPTURED" ||
-      latest?.paymentStatus ===
-        "PROCESSING"
+      latest?.paymentStatus === "CAPTURED" ||
+      latest?.paymentStatus === "PROCESSING"
     ) {
       return latest;
     }
@@ -2507,12 +1911,9 @@ async function finalizePaidOrder(
   /*
    * Finalize inventory first.
    */
-  await consumeReservation(
-    orderId,
-  );
+  await consumeReservation(orderId);
 
-  const tx =
-    new sql.Transaction(pool);
+  const tx = new sql.Transaction(pool);
 
   await tx.begin();
 
@@ -2521,40 +1922,23 @@ async function finalizePaidOrder(
      * Consume reserved store credit
      * only when payment/order succeeds.
      */
-    if (
-      Number(
-        row.storeCreditApplied ?? 0,
-      ) > 0
-    ) {
+    if (Number(row.storeCreditApplied ?? 0) > 0) {
       await consumeStoreCredit(
         tx,
         orderId,
         row.customerId,
-        Number(
-          row.storeCreditApplied,
-        ),
+        Number(row.storeCreditApplied),
       );
     }
 
     /*
      * Coupon redemption.
      */
-    if (
-      row.couponCode &&
-      row.couponCode.toUpperCase() !==
-        "WELCOME5"
-    ) {
-      const coupon =
-        await new sql.Request(tx)
-          .input(
-            "code",
-            sql.NVarChar(100),
-            row.couponCode
-              .trim()
-              .toUpperCase(),
-          )
-          .query<any>(
-            `
+    if (row.couponCode && row.couponCode.toUpperCase() !== "WELCOME5") {
+      const coupon = await new sql.Request(tx)
+        .input("code", sql.NVarChar(100), row.couponCode.trim().toUpperCase())
+        .query<any>(
+          `
             SELECT TOP 1
               id,
               max_redemptions
@@ -2567,7 +1951,7 @@ async function finalizePaidOrder(
               @code
               AND is_active = 1
             `,
-          );
+        );
 
       if (!coupon.recordset[0]) {
         throw new Error(
@@ -2575,18 +1959,13 @@ async function finalizePaidOrder(
         );
       }
 
-      const c =
-        coupon.recordset[0];
+      const c = coupon.recordset[0];
 
-      const update =
-        await new sql.Request(tx)
-          .input("id", c.id)
-          .input(
-            "max",
-            c.maxRedemptions,
-          )
-          .query(
-            `
+      const update = await new sql.Request(tx)
+        .input("id", c.id)
+        .input("max", c.maxRedemptions)
+        .query(
+          `
             UPDATE dbo.coupons
             SET
               redeemed_count =
@@ -2599,7 +1978,7 @@ async function finalizePaidOrder(
                    @max
               )
             `,
-          );
+        );
 
       if (!update.rowsAffected[0]) {
         throw new Error(
@@ -2607,43 +1986,23 @@ async function finalizePaidOrder(
         );
       }
 
-      const discount =
-        await new sql.Request(tx)
-          .input(
-            "orderId",
-            orderId,
-          )
-          .query<any>(
-            `
+      const discount = await new sql.Request(tx)
+        .input("orderId", orderId)
+        .query<any>(
+          `
             SELECT
               discount_inr discount
             FROM dbo.orders
             WHERE id = @orderId
             `,
-          );
+        );
 
       await new sql.Request(tx)
-        .input(
-          "id",
-          randomUUID(),
-        )
-        .input(
-          "couponId",
-          c.id,
-        )
-        .input(
-          "customerId",
-          row.customerId,
-        )
-        .input(
-          "orderId",
-          orderId,
-        )
-        .input(
-          "discount",
-          discount.recordset[0]
-            ?.discount ?? 0,
-        )
+        .input("id", randomUUID())
+        .input("couponId", c.id)
+        .input("customerId", row.customerId)
+        .input("orderId", orderId)
+        .input("discount", discount.recordset[0]?.discount ?? 0)
         .query(
           `
           INSERT INTO dbo.coupon_redemptions(
@@ -2666,10 +2025,7 @@ async function finalizePaidOrder(
 
     await new sql.Request(tx)
       .input("id", orderId)
-      .input(
-        "paymentId",
-        paymentId,
-      )
+      .input("paymentId", paymentId)
       .query(
         `
         UPDATE orders
@@ -2700,13 +2056,8 @@ async function finalizePaidOrder(
         `,
       );
 
-    await new sql.Request(tx)
-      .input(
-        "customerId",
-        row.customerId,
-      )
-      .query(
-        `
+    await new sql.Request(tx).input("customerId", row.customerId).query(
+      `
         DELETE ci
         FROM cart_items ci
         INNER JOIN carts c
@@ -2714,20 +2065,16 @@ async function finalizePaidOrder(
         WHERE c.customer_id =
           @customerId
         `,
-      );
+    );
 
     await tx.commit();
 
-    void sendOrderStatusEmail(
-      orderId,
-      "PAID",
-    );
+    void sendOrderStatusEmail(orderId, "PAID");
 
     return {
       ...row,
       status: "PAID",
-      paymentStatus:
-        "CAPTURED",
+      paymentStatus: "CAPTURED",
     };
   } catch (error) {
     await tx.rollback();
@@ -2757,30 +2104,18 @@ export async function verifyPayment(
   razorpayPaymentId: string,
   razorpaySignature: string,
 ) {
-  if (
-    !verifySignature(
-      razorpayOrderId,
-      razorpayPaymentId,
-      razorpaySignature,
-    )
-  ) {
-    throw new Error(
-      "Payment verification failed.",
-    );
+  if (!verifySignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
+    throw new Error("Payment verification failed.");
   }
 
   const pool = await getDb();
 
-  const order =
-    await pool
-      .request()
-      .input("id", orderId)
-      .input(
-        "customerId",
-        customerId,
-      )
-      .query<any>(
-        `
+  const order = await pool
+    .request()
+    .input("id", orderId)
+    .input("customerId", customerId)
+    .query<any>(
+      `
         SELECT TOP 1
           id,
           order_number orderNumber,
@@ -2797,72 +2132,45 @@ export async function verifyPayment(
           AND customer_id =
             @customerId
         `,
-      );
+    );
 
-  const row =
-    order.recordset[0];
+  const row = order.recordset[0];
 
   if (!row) {
-    throw new Error(
-      "Order not found.",
-    );
+    throw new Error("Order not found.");
   }
 
-  if (
-    row.paymentOrderId !==
-    razorpayOrderId
-  ) {
-    throw new Error(
-      "Payment order does not match this order.",
-    );
+  if (row.paymentOrderId !== razorpayOrderId) {
+    throw new Error("Payment order does not match this order.");
   }
 
-  if (
-    row.paymentStatus ===
-    "CAPTURED"
-  ) {
+  if (row.paymentStatus === "CAPTURED") {
     return {
       orderId,
-      orderNumber:
-        row.orderNumber,
+      orderNumber: row.orderNumber,
       status: "PAID",
     };
   }
 
-  const payment =
-    await razorpayRequest<any>(
-      `/payments/${encodeURIComponent(
-        razorpayPaymentId,
-      )}`,
-    );
+  const payment = await razorpayRequest<any>(
+    `/payments/${encodeURIComponent(razorpayPaymentId)}`,
+  );
 
-  if (
-    payment.order_id !==
-    razorpayOrderId
-  ) {
-    throw new Error(
-      "Payment belongs to a different order.",
-    );
+  if (payment.order_id !== razorpayOrderId) {
+    throw new Error("Payment belongs to a different order.");
   }
 
-  if (
-    payment.status !==
-    "captured"
-  ) {
+  if (payment.status !== "captured") {
     throw new Error(
       `Payment is ${payment.status}; the order will remain pending until it is captured.`,
     );
   }
 
-  await finalizePaidOrder(
-    orderId,
-    razorpayPaymentId,
-  );
+  await finalizePaidOrder(orderId, razorpayPaymentId);
 
   return {
     orderId,
-    orderNumber:
-      row.orderNumber,
+    orderNumber: row.orderNumber,
     status: "PAID",
   };
 }
@@ -2877,15 +2185,8 @@ export async function handleRazorpayWebhook(
   eventId: string | undefined,
   payload: any,
 ) {
-  if (
-    !verifyWebhookSignature(
-      rawBody,
-      signature,
-    )
-  ) {
-    throw new Error(
-      "Invalid Razorpay webhook signature.",
-    );
+  if (!verifyWebhookSignature(rawBody, signature)) {
+    throw new Error("Invalid Razorpay webhook signature.");
   }
 
   const pool = await getDb();
@@ -2893,10 +2194,7 @@ export async function handleRazorpayWebhook(
   const id =
     eventId ||
     payload?.id ||
-    createHmac(
-      "sha256",
-      env.RAZORPAY_WEBHOOK_SECRET,
-    )
+    createHmac("sha256", env.RAZORPAY_WEBHOOK_SECRET)
       .update(rawBody)
       .digest("hex");
 
@@ -2905,31 +2203,24 @@ export async function handleRazorpayWebhook(
    * IDEMPOTENCY
    * ------------------------------------------------------------
    */
-  const exists =
-    await pool
-      .request()
-      .input(
-        "eventId",
-        id,
-      )
-      .query(
-        `
+  const exists = await pool
+    .request()
+    .input("eventId", id)
+    .query(
+      `
         SELECT TOP 1
           id,
           processed_at processedAt
         FROM payment_webhook_events
         WHERE event_id = @eventId
         `,
-      );
+    );
 
   /*
    * If this exact event was already successfully processed,
    * ignore the duplicate.
    */
-  if (
-    exists.recordset[0]
-      ?.processedAt
-  ) {
+  if (exists.recordset[0]?.processedAt) {
     return true;
   }
 
@@ -2940,19 +2231,9 @@ export async function handleRazorpayWebhook(
   if (!exists.recordset.length) {
     await pool
       .request()
-      .input(
-        "eventId",
-        id,
-      )
-      .input(
-        "eventType",
-        payload?.event ||
-          "unknown",
-      )
-      .input(
-        "payload",
-        JSON.stringify(payload),
-      )
+      .input("eventId", id)
+      .input("eventType", payload?.event || "unknown")
+      .input("payload", JSON.stringify(payload))
       .query(
         `
         INSERT INTO payment_webhook_events(
@@ -2974,24 +2255,16 @@ export async function handleRazorpayWebhook(
    * RAZORPAY REFUND WEBHOOKS
    * ============================================================
    */
-  const refund =
-    payload?.payload?.refund
-      ?.entity;
+  const refund = payload?.payload?.refund?.entity;
 
   if (
     refund &&
-    [
-      "refund.processed",
-      "refund.failed",
-    ].includes(payload?.event)
+    ["refund.processed", "refund.failed"].includes(payload?.event)
   ) {
-    const razorpayRefundId =
-      refund.id;
+    const razorpayRefundId = refund.id;
 
     if (!razorpayRefundId) {
-      throw new Error(
-        "Razorpay refund webhook is missing refund ID.",
-      );
+      throw new Error("Razorpay refund webhook is missing refund ID.");
     }
 
     /*
@@ -3000,10 +2273,7 @@ export async function handleRazorpayWebhook(
     const refundRow = (
       await pool
         .request()
-        .input(
-          "refundId",
-          razorpayRefundId,
-        )
+        .input("refundId", razorpayRefundId)
         .query<any>(
           `
           SELECT TOP 1
@@ -3035,21 +2305,12 @@ export async function handleRazorpayWebhook(
      * ----------------------------------------------------------
      */
     const newRefundStatus =
-      payload.event ===
-      "refund.processed"
-        ? "PROCESSED"
-        : "FAILED";
+      payload.event === "refund.processed" ? "PROCESSED" : "FAILED";
 
     await pool
       .request()
-      .input(
-        "refundId",
-        razorpayRefundId,
-      )
-      .input(
-        "status",
-        newRefundStatus,
-      )
+      .input("refundId", razorpayRefundId)
+      .input("status", newRefundStatus)
       .query(
         `
         UPDATE payment_refunds
@@ -3071,17 +2332,11 @@ export async function handleRazorpayWebhook(
      * REFUND PROCESSED
      * ----------------------------------------------------------
      */
-    if (
-      payload.event ===
-      "refund.processed"
-    ) {
+    if (payload.event === "refund.processed") {
       const orderRefunds = (
         await pool
           .request()
-          .input(
-            "orderId",
-            refundRow.orderId,
-          )
+          .input("orderId", refundRow.orderId)
           .query<any>(
             `
             SELECT
@@ -3096,19 +2351,12 @@ export async function handleRazorpayWebhook(
           )
       ).recordset[0];
 
-      const totalRefunded =
-        Number(
-          orderRefunds?.refunded ||
-            0,
-        );
+      const totalRefunded = Number(orderRefunds?.refunded || 0);
 
       const order = (
         await pool
           .request()
-          .input(
-            "orderId",
-            refundRow.orderId,
-          )
+          .input("orderId", refundRow.orderId)
           .query<any>(
             `
             SELECT TOP 1
@@ -3121,34 +2369,18 @@ export async function handleRazorpayWebhook(
           )
       ).recordset[0];
 
-      const refundableAmount =
-        Math.max(
-          0,
-          Number(
-            order?.totalInr || 0,
-          ) -
-            Number(
-              order?.storeCreditApplied ||
-                0,
-            ),
-        );
+      const refundableAmount = Math.max(
+        0,
+        Number(order?.totalInr || 0) - Number(order?.storeCreditApplied || 0),
+      );
 
       const paymentStatus =
-        totalRefunded >=
-        refundableAmount
-          ? "REFUNDED"
-          : "PARTIALLY_REFUNDED";
+        totalRefunded >= refundableAmount ? "REFUNDED" : "PARTIALLY_REFUNDED";
 
       await pool
         .request()
-        .input(
-          "orderId",
-          refundRow.orderId,
-        )
-        .input(
-          "paymentStatus",
-          paymentStatus,
-        )
+        .input("orderId", refundRow.orderId)
+        .input("paymentStatus", paymentStatus)
         .query(
           `
           UPDATE orders
@@ -3161,10 +2393,7 @@ export async function handleRazorpayWebhook(
           `,
         );
 
-      void sendOrderStatusEmail(
-        refundRow.orderId,
-        paymentStatus,
-      );
+      void sendOrderStatusEmail(refundRow.orderId, paymentStatus);
     }
 
     /*
@@ -3172,16 +2401,10 @@ export async function handleRazorpayWebhook(
      * REFUND FAILED
      * ----------------------------------------------------------
      */
-    if (
-      payload.event ===
-      "refund.failed"
-    ) {
+    if (payload.event === "refund.failed") {
       await pool
         .request()
-        .input(
-          "orderId",
-          refundRow.orderId,
-        )
+        .input("orderId", refundRow.orderId)
         .query(
           `
           UPDATE orders
@@ -3194,10 +2417,7 @@ export async function handleRazorpayWebhook(
           `,
         );
 
-      void sendOrderStatusEmail(
-        refundRow.orderId,
-        "REFUND_FAILED",
-      );
+      void sendOrderStatusEmail(refundRow.orderId, "REFUND_FAILED");
     }
 
     /*
@@ -3206,10 +2426,7 @@ export async function handleRazorpayWebhook(
      */
     await pool
       .request()
-      .input(
-        "eventId",
-        id,
-      )
+      .input("eventId", id)
       .query(
         `
         UPDATE payment_webhook_events
@@ -3229,66 +2446,42 @@ export async function handleRazorpayWebhook(
    * NORMAL PAYMENT WEBHOOKS
    * ============================================================
    */
-  const payment =
-    payload?.payload?.payment
-      ?.entity;
+  const payment = payload?.payload?.payment?.entity;
 
-  const razorOrderId =
-    payment?.order_id;
+  const razorOrderId = payment?.order_id;
 
-  const paymentId =
-    payment?.id;
+  const paymentId = payment?.id;
 
-  const order =
-    razorOrderId
-      ? await pool
-          .request()
-          .input(
-            "paymentOrderId",
-            razorOrderId,
-          )
-          .query<any>(
-            `
+  const order = razorOrderId
+    ? await pool
+        .request()
+        .input("paymentOrderId", razorOrderId)
+        .query<any>(
+          `
             SELECT TOP 1
               id
             FROM orders
             WHERE payment_order_id =
               @paymentOrderId
             `,
-          )
-      : {
-          recordset: [],
-        };
+        )
+    : {
+        recordset: [],
+      };
 
-  const orderId =
-    order.recordset[0]?.id;
+  const orderId = order.recordset[0]?.id;
 
   /*
    * Payment successfully captured.
    */
-  if (
-    orderId &&
-    [
-      "payment.captured",
-      "order.paid",
-    ].includes(
-      payload?.event,
-    )
-  ) {
-    await finalizePaidOrder(
-      orderId,
-      paymentId || "",
-    );
+  if (orderId && ["payment.captured", "order.paid"].includes(payload?.event)) {
+    await finalizePaidOrder(orderId, paymentId || "");
   }
 
   /*
    * Payment failed.
    */
-  if (
-    orderId &&
-    payload?.event ===
-      "payment.failed"
-  ) {
+  if (orderId && payload?.event === "payment.failed") {
     await releaseOrderReservation(
       orderId,
       "PAYMENT_FAILED",
@@ -3302,10 +2495,7 @@ export async function handleRazorpayWebhook(
    */
   await pool
     .request()
-    .input(
-      "eventId",
-      id,
-    )
+    .input("eventId", id)
     .query(
       `
       UPDATE payment_webhook_events
@@ -3328,63 +2518,35 @@ function mapOrder(row: any) {
   let address: any = {};
 
   try {
-    address = JSON.parse(
-      row.shippingAddressJson,
-    );
+    address = JSON.parse(row.shippingAddressJson);
   } catch {}
 
   return {
     ...row,
 
-    totalInr: Number(
-      row.totalInr,
-    ),
+    totalInr: Number(row.totalInr),
 
-    subtotalInr: Number(
-      row.subtotalInr,
-    ),
+    subtotalInr: Number(row.subtotalInr),
 
-    shippingInr: Number(
-      row.shippingInr,
-    ),
+    shippingInr: Number(row.shippingInr),
 
-    discountInr: Number(
-      row.discountInr,
-    ),
+    discountInr: Number(row.discountInr),
 
-    taxInr: Number(
-      row.taxInr ?? 0,
-    ),
+    taxInr: Number(row.taxInr ?? 0),
 
-    storeCreditAppliedInr:
-      Number(
-        row.storeCreditAppliedInr ??
-          0,
-      ),
+    storeCreditAppliedInr: Number(row.storeCreditAppliedInr ?? 0),
 
-    createdAt: new Date(
-      row.createdAt,
-    ).toISOString(),
+    createdAt: new Date(row.createdAt).toISOString(),
 
-    shippedAt:
-      row.shippedAt
-        ? new Date(
-            row.shippedAt,
-          ).toISOString()
-        : null,
+    shippedAt: row.shippedAt ? new Date(row.shippedAt).toISOString() : null,
 
-    deliveredAt:
-      row.deliveredAt
-        ? new Date(
-            row.deliveredAt,
-          ).toISOString()
-        : null,
+    deliveredAt: row.deliveredAt
+      ? new Date(row.deliveredAt).toISOString()
+      : null,
 
-    shippingAddress:
-      address,
+    shippingAddress: address,
 
-    items:
-      row.items ?? [],
+    items: row.items ?? [],
   };
 }
 
@@ -3427,17 +2589,12 @@ const orderSelect = `
    CUSTOMER ORDERS
    ============================================================ */
 
-export async function listCustomerOrders(
-  customerId: string,
-) {
+export async function listCustomerOrders(customerId: string) {
   const pool = await getDb();
 
   const r = await pool
     .request()
-    .input(
-      "customerId",
-      customerId,
-    )
+    .input("customerId", customerId)
     .query<any>(
       `
       SELECT
@@ -3459,87 +2616,168 @@ export async function listCustomerOrders(
       `,
     );
 
-  return r.recordset.map(
-    mapOrder,
-  );
+  return r.recordset.map(mapOrder);
 }
 
-export async function getCustomerOrder(
-  customerId: string,
-  id: string,
-) {
+export async function getCustomerOrder(customerId: string, id: string) {
   const pool = await getDb();
 
   const r = await pool
     .request()
     .input("id", id)
-    .input(
-      "customerId",
-      customerId,
-    )
+    .input("customerId", customerId)
     .query<any>(
       `
       SELECT TOP 1
         ${orderSelect}
       FROM orders
       WHERE id = @id
-        AND customer_id =
-          @customerId
+        AND customer_id = @customerId
       `,
     );
 
-  const row =
-    r.recordset[0];
+  const row = r.recordset[0];
 
   if (!row) {
     return null;
   }
 
-  const items =
-    await pool
-      .request()
-      .input(
-        "orderId",
-        id,
+  const items = await pool
+    .request()
+    .input("orderId", id)
+    .query<any>(
+      `
+      SELECT
+        oi.id,
+        oi.product_name productName,
+        oi.sku,
+        oi.quantity,
+        oi.variant_id variantId,
+        pv.product_id productId,
+        pv.size,
+
+        CAST(
+          oi.unit_price_inr AS decimal(12,2)
+        ) unitPriceInr,
+
+        CAST(
+          oi.total_price_inr AS decimal(12,2)
+        ) totalPriceInr
+
+      FROM order_items oi
+
+      LEFT JOIN product_variants pv
+        ON pv.id = oi.variant_id
+
+      WHERE oi.order_id = @orderId
+
+      ORDER BY oi.id
+      `,
+    );
+
+  /*
+   * Get all currently available sizes for products
+   * contained in this order.
+   *
+   * Available means:
+   * quantity_available - quantity_reserved > 0
+   */
+  const replacementSizesResult = await pool
+    .request()
+    .input("orderId", id)
+    .query<any>(
+      `
+      SELECT DISTINCT
+        pv.product_id productId,
+        LTRIM(RTRIM(pv.size)) size
+
+      FROM product_variants pv
+
+      INNER JOIN inventory i
+        ON i.variant_id = pv.id
+
+      WHERE pv.product_id IN (
+        SELECT DISTINCT
+          pv2.product_id
+
+        FROM order_items oi2
+
+        INNER JOIN product_variants pv2
+          ON pv2.id = oi2.variant_id
+
+        WHERE oi2.order_id = @orderId
       )
-      .query<any>(
-        `
-        SELECT
-          id,
-          product_name productName,
-          sku,
-          quantity,
-          CAST(
-            unit_price_inr
-            AS decimal(12,2)
-          ) unitPriceInr,
-          CAST(
-            total_price_inr
-            AS decimal(12,2)
-          ) totalPriceInr
-        FROM order_items
-        WHERE order_id = @orderId
-        ORDER BY id
-        `,
-      );
+
+      AND (
+        i.quantity_available -
+        i.quantity_reserved
+      ) > 0
+
+      ORDER BY
+        pv.product_id,
+        LTRIM(RTRIM(pv.size))
+      `,
+    );
+
+  /*
+   * Build:
+   *
+   * productId -> available sizes
+   */
+  const availableSizesByProduct = new Map<string, string[]>();
+
+  for (const row of replacementSizesResult.recordset) {
+    const productId = String(row.productId);
+    const size = String(row.size ?? "").trim();
+
+    if (!size) {
+      continue;
+    }
+
+    const existing = availableSizesByProduct.get(productId) ?? [];
+
+    if (!existing.includes(size)) {
+      existing.push(size);
+    }
+
+    availableSizesByProduct.set(productId, existing);
+  }
 
   return {
     ...mapOrder(row),
 
-    items:
-      items.recordset.map(
-        (item: any) => ({
-          ...item,
-          unitPriceInr:
-            Number(
-              item.unitPriceInr,
-            ),
-          totalPriceInr:
-            Number(
-              item.totalPriceInr,
-            ),
-        }),
-      ),
+    items: items.recordset.map((item: any) => {
+      const productId = item.productId ? String(item.productId) : null;
+
+      const currentSize = item.size ? String(item.size).trim() : null;
+
+      const availableSizes = productId
+        ? (availableSizesByProduct.get(productId) ?? [])
+        : [];
+
+      /*
+       * Don't offer the size the customer already has.
+       */
+      const replacementSizes = availableSizes.filter(
+        (size) =>
+          !currentSize || size.toUpperCase() !== currentSize.toUpperCase(),
+      );
+
+      return {
+        ...item,
+
+        productId,
+        variantId: item.variantId ? String(item.variantId) : null,
+
+        size: currentSize,
+
+        replacementSizes,
+
+        unitPriceInr: Number(item.unitPriceInr),
+
+        totalPriceInr: Number(item.totalPriceInr),
+      };
+    }),
   };
 }
 
@@ -3557,10 +2795,7 @@ export async function cancelCustomerOrder(
   const r = await pool
     .request()
     .input("id", id)
-    .input(
-      "customerId",
-      customerId,
-    )
+    .input("customerId", customerId)
     .query<any>(
       `
       SELECT TOP 1
@@ -3576,23 +2811,14 @@ export async function cancelCustomerOrder(
       `,
     );
 
-  const o =
-    r.recordset[0];
+  const o = r.recordset[0];
 
   if (!o) {
-    throw new Error(
-      "Order not found.",
-    );
+    throw new Error("Order not found.");
   }
 
-  if (
-    !["PAID", "PROCESSING"].includes(
-      o.status,
-    )
-  ) {
-    throw new Error(
-      "This order can no longer be cancelled.",
-    );
+  if (!["PAID", "PROCESSING"].includes(o.status)) {
+    throw new Error("This order can no longer be cancelled.");
   }
 
   const shipped = (
@@ -3606,13 +2832,10 @@ export async function cancelCustomerOrder(
         WHERE id = @id
         `,
       )
-  ).recordset[0]
-    ?.shippedAt;
+  ).recordset[0]?.shippedAt;
 
   if (shipped) {
-    throw new Error(
-      "This order has already been shipped.",
-    );
+    throw new Error("This order has already been shipped.");
   }
 
   /*
@@ -3623,31 +2846,17 @@ export async function cancelCustomerOrder(
    * Store credit is restored separately below.
    * ------------------------------------------------------------
    */
-  if (
-    o.paymentStatus ===
-      "CAPTURED" &&
-    o.paymentReference
-  ) {
-    const razorpayRefundAmount =
-      Math.max(
-        0,
-        Number(o.totalInr) -
-          Number(
-            o.storeCreditApplied ??
-              0,
-          ),
-      );
+  if (o.paymentStatus === "CAPTURED" && o.paymentReference) {
+    const razorpayRefundAmount = Math.max(
+      0,
+      Number(o.totalInr) - Number(o.storeCreditApplied ?? 0),
+    );
 
-    if (
-      razorpayRefundAmount > 0
-    ) {
+    if (razorpayRefundAmount > 0) {
       await refundPayment(
         id,
         razorpayRefundAmount,
-        `Customer cancellation: ${
-          reason ||
-          "No reason provided"
-        }`,
+        `Customer cancellation: ${reason || "No reason provided"}`,
       );
     }
   }
@@ -3664,15 +2873,8 @@ export async function cancelCustomerOrder(
    * A separate email is sent to explain the store-credit
    * restoration and show the customer's new balance.
    */
-  if (
-    Number(
-      o.storeCreditApplied ?? 0,
-    ) > 0
-  ) {
-    const storeCreditRestore =
-      await restoreStoreCreditForOrder(
-        id,
-      );
+  if (Number(o.storeCreditApplied ?? 0) > 0) {
+    const storeCreditRestore = await restoreStoreCreditForOrder(id);
 
     if (storeCreditRestore) {
       void sendStoreCreditRestoreEmail(
@@ -3686,9 +2888,7 @@ export async function cancelCustomerOrder(
   /*
    * Return the inventory to stock.
    */
-  await restoreInventoryForOrder(
-    id,
-  );
+  await restoreInventoryForOrder(id);
 
   /*
    * The ORDER itself is cancelled.
@@ -3699,10 +2899,7 @@ export async function cancelCustomerOrder(
   await pool
     .request()
     .input("id", id)
-    .input(
-      "reason",
-      reason || null,
-    )
+    .input("reason", reason || null)
     .query(
       `
       UPDATE orders
@@ -3728,31 +2925,19 @@ export async function cancelCustomerOrder(
       `,
     );
 
-  return getCustomerOrder(
-    customerId,
-    id,
-  );
+  return getCustomerOrder(customerId, id);
 }
 
-async function restoreInventoryForOrder(
-  orderId: string,
-) {
+async function restoreInventoryForOrder(orderId: string) {
   const pool = await getDb();
 
-  const tx =
-    new sql.Transaction(pool);
+  const tx = new sql.Transaction(pool);
 
   await tx.begin();
 
   try {
-    const rows =
-      await new sql.Request(tx)
-        .input(
-          "orderId",
-          orderId,
-        )
-        .query<any>(
-          `
+    const rows = await new sql.Request(tx).input("orderId", orderId).query<any>(
+      `
           SELECT
             variant_id variantId,
             quantity
@@ -3760,18 +2945,12 @@ async function restoreInventoryForOrder(
           WHERE order_id =
             @orderId
           `,
-        );
+    );
 
     for (const x of rows.recordset) {
       await new sql.Request(tx)
-        .input(
-          "variantId",
-          x.variantId,
-        )
-        .input(
-          "quantity",
-          x.quantity,
-        )
+        .input("variantId", x.variantId)
+        .input("quantity", x.quantity)
         .query(
           `
           UPDATE inventory
@@ -3808,10 +2987,7 @@ export async function refundPayment(
   const order = (
     await pool
       .request()
-      .input(
-        "id",
-        orderId,
-      )
+      .input("id", orderId)
       .query<any>(
         `
         SELECT TOP 1
@@ -3827,23 +3003,14 @@ export async function refundPayment(
   ).recordset[0];
 
   if (!order) {
-    throw new Error(
-      "Order not found.",
-    );
+    throw new Error("Order not found.");
   }
 
   if (
-    ![
-      "CAPTURED",
-      "PARTIALLY_REFUNDED",
-    ].includes(
-      order.paymentStatus,
-    ) ||
+    !["CAPTURED", "PARTIALLY_REFUNDED"].includes(order.paymentStatus) ||
     !order.paymentReference
   ) {
-    throw new Error(
-      "Only captured payments can be refunded.",
-    );
+    throw new Error("Only captured payments can be refunded.");
   }
 
   /*
@@ -3855,15 +3022,10 @@ export async function refundPayment(
    * Therefore the maximum Razorpay refund is NOT simply
    * order.totalInr.
    */
-  const razorpayPaidAmount =
-    Math.max(
-      0,
-      Number(order.totalInr) -
-        Number(
-          order.storeCreditApplied ??
-            0,
-        ),
-    );
+  const razorpayPaidAmount = Math.max(
+    0,
+    Number(order.totalInr) - Number(order.storeCreditApplied ?? 0),
+  );
 
   /*
    * Calculate how much has already been refunded through
@@ -3873,10 +3035,7 @@ export async function refundPayment(
     (
       await pool
         .request()
-        .input(
-          "orderId",
-          orderId,
-        )
+        .input("orderId", orderId)
         .query<any>(
           `
           SELECT
@@ -3889,18 +3048,13 @@ export async function refundPayment(
             AND status = 'PROCESSED'
           `,
         )
-    ).recordset[0]?.refunded ||
-      0,
+    ).recordset[0]?.refunded || 0,
   );
 
-  const remaining =
-    razorpayPaidAmount -
-    prior;
+  const remaining = razorpayPaidAmount - prior;
 
   if (amountInr <= 0) {
-    throw new Error(
-      "Refund amount must be greater than zero.",
-    );
+    throw new Error("Refund amount must be greater than zero.");
   }
 
   if (amountInr > remaining) {
@@ -3920,26 +3074,19 @@ export async function refundPayment(
    * ₹500 = 50000 paise
    * ------------------------------------------------------------
    */
-  const refund =
-    await razorpayRequest<any>(
-      `/payments/${encodeURIComponent(
-        order.paymentReference,
-      )}/refund`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          amount: Math.round(
-            amountInr * 100,
-          ),
-          notes: {
-            reason:
-              reason.slice(0, 500),
-            smolstudioOrderId:
-              orderId,
-          },
-        }),
-      },
-    );
+  const refund = await razorpayRequest<any>(
+    `/payments/${encodeURIComponent(order.paymentReference)}/refund`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        amount: Math.round(amountInr * 100),
+        notes: {
+          reason: reason.slice(0, 500),
+          smolstudioOrderId: orderId,
+        },
+      }),
+    },
+  );
 
   /*
    * Razorpay has accepted/created the refund.
@@ -3947,42 +3094,17 @@ export async function refundPayment(
    * Keep the Razorpay refund ID so that webhook updates can
    * later synchronize the final refund state.
    */
-  const refundStatus =
-    refund?.status ===
-    "processed"
-      ? "PROCESSED"
-      : "PENDING";
+  const refundStatus = refund?.status === "processed" ? "PROCESSED" : "PENDING";
 
   await pool
     .request()
-    .input(
-      "id",
-      randomUUID(),
-    )
-    .input(
-      "orderId",
-      orderId,
-    )
-    .input(
-      "paymentReference",
-      order.paymentReference,
-    )
-    .input(
-      "refundId",
-      refund.id,
-    )
-    .input(
-      "amount",
-      amountInr,
-    )
-    .input(
-      "status",
-      refundStatus,
-    )
-    .input(
-      "reason",
-      reason,
-    )
+    .input("id", randomUUID())
+    .input("orderId", orderId)
+    .input("paymentReference", order.paymentReference)
+    .input("refundId", refund.id)
+    .input("amount", amountInr)
+    .input("status", refundStatus)
+    .input("reason", reason)
     .query(
       `
       INSERT INTO payment_refunds(
@@ -4019,25 +3141,14 @@ export async function refundPayment(
    * Otherwise leave the payment in its existing state until
    * the Razorpay refund webhook confirms the result.
    */
-  if (
-    refundStatus ===
-    "PROCESSED"
-  ) {
+  if (refundStatus === "PROCESSED") {
     const newPaymentStatus =
-      amountInr >= remaining
-        ? "REFUNDED"
-        : "PARTIALLY_REFUNDED";
+      amountInr >= remaining ? "REFUNDED" : "PARTIALLY_REFUNDED";
 
     await pool
       .request()
-      .input(
-        "id",
-        orderId,
-      )
-      .input(
-        "status",
-        newPaymentStatus,
-      )
+      .input("id", orderId)
+      .input("status", newPaymentStatus)
       .query(
         `
         UPDATE orders
@@ -4063,9 +3174,7 @@ export async function refundPayment(
 
     void sendOrderStatusEmail(
       orderId,
-      amountInr >= remaining
-        ? "REFUNDED"
-        : "PARTIALLY_REFUNDED",
+      amountInr >= remaining ? "REFUNDED" : "PARTIALLY_REFUNDED",
     );
   } else {
     /*
@@ -4077,10 +3186,7 @@ export async function refundPayment(
      */
     await pool
       .request()
-      .input(
-        "id",
-        orderId,
-      )
+      .input("id", orderId)
       .query(
         `
         UPDATE orders
@@ -4093,10 +3199,7 @@ export async function refundPayment(
         `,
       );
 
-    void sendOrderStatusEmail(
-      orderId,
-      "REFUND_PENDING",
-    );
+    void sendOrderStatusEmail(orderId, "REFUND_PENDING");
   }
 
   return refund;
@@ -4112,9 +3215,7 @@ export async function requestReturn(
   reason: string,
 ) {
   if (!reason.trim()) {
-    throw new Error(
-      "Return reason is required.",
-    );
+    throw new Error("Return reason is required.");
   }
 
   const pool = await getDb();
@@ -4122,14 +3223,8 @@ export async function requestReturn(
   const o = (
     await pool
       .request()
-      .input(
-        "id",
-        orderId,
-      )
-      .input(
-        "customerId",
-        customerId,
-      )
+      .input("id", orderId)
+      .input("customerId", customerId)
       .query<any>(
         `
         SELECT TOP 1
@@ -4147,29 +3242,18 @@ export async function requestReturn(
   ).recordset[0];
 
   if (!o) {
-    throw new Error(
-      "Order not found.",
-    );
+    throw new Error("Order not found.");
   }
 
-  if (
-    o.status !==
-    "DELIVERED"
-  ) {
-    throw new Error(
-      "Returns can be requested after delivery.",
-    );
+  if (o.status !== "DELIVERED") {
+    throw new Error("Returns can be requested after delivery.");
   }
 
-  const existing =
-    await pool
-      .request()
-      .input(
-        "orderId",
-        orderId,
-      )
-      .query(
-        `
+  const existing = await pool
+    .request()
+    .input("orderId", orderId)
+    .query(
+      `
         SELECT TOP 1
           id
         FROM return_requests
@@ -4180,36 +3264,21 @@ export async function requestReturn(
             'CANCELLED'
           )
         `,
-      );
+    );
 
   if (existing.recordset.length) {
-    throw new Error(
-      "A return request already exists for this order.",
-    );
+    throw new Error("A return request already exists for this order.");
   }
 
-  const id =
-    randomUUID();
+  const id = randomUUID();
 
   await pool
     .request()
     .input("id", id)
-    .input(
-      "orderId",
-      orderId,
-    )
-    .input(
-      "customerId",
-      customerId,
-    )
-    .input(
-      "reason",
-      reason.trim(),
-    )
-    .input(
-      "amount",
-      o.totalInr,
-    )
+    .input("orderId", orderId)
+    .input("customerId", customerId)
+    .input("reason", reason.trim())
+    .input("amount", o.totalInr)
     .query(
       `
       INSERT INTO return_requests(
@@ -4242,19 +3311,12 @@ export async function calculateOrderItemPaidAmount(
 ) {
   const pool = await getDb();
 
-  const result =
-    await pool
-      .request()
-      .input(
-        "orderId",
-        orderId,
-      )
-      .input(
-        "orderItemId",
-        orderItemId,
-      )
-      .query<any>(
-        `
+  const result = await pool
+    .request()
+    .input("orderId", orderId)
+    .input("orderItemId", orderItemId)
+    .query<any>(
+      `
         SELECT TOP 1
           oi.id orderItemId,
           oi.total_price_inr itemTotal,
@@ -4268,82 +3330,37 @@ export async function calculateOrderItemPaidAmount(
           AND oi.order_id =
             @orderId
         `,
-      );
+    );
 
-  const row =
-    result.recordset[0];
+  const row = result.recordset[0];
 
   if (!row) {
-    throw new Error(
-      "Order item not found.",
-    );
+    throw new Error("Order item not found.");
   }
 
-  const itemTotal =
-    roundMoney(
-      Number(row.itemTotal),
-    );
+  const itemTotal = roundMoney(Number(row.itemTotal));
 
-  const subtotal =
-    roundMoney(
-      Number(row.subtotal),
-    );
+  const subtotal = roundMoney(Number(row.subtotal));
 
-  const orderDiscount =
-    Math.max(
-      0,
-      roundMoney(
-        Number(row.discount),
-      ),
-    );
+  const orderDiscount = Math.max(0, roundMoney(Number(row.discount)));
 
-  let allocatedDiscount =
-    0;
+  let allocatedDiscount = 0;
 
-  if (
-    subtotal > 0 &&
-    orderDiscount > 0
-  ) {
-    allocatedDiscount =
-      roundMoney(
-        (itemTotal /
-          subtotal) *
-          orderDiscount,
-      );
+  if (subtotal > 0 && orderDiscount > 0) {
+    allocatedDiscount = roundMoney((itemTotal / subtotal) * orderDiscount);
   }
 
-  allocatedDiscount =
-    Math.min(
-      itemTotal,
-      allocatedDiscount,
-    );
+  allocatedDiscount = Math.min(itemTotal, allocatedDiscount);
 
-  const paidAmount =
-    roundMoney(
-      itemTotal -
-        allocatedDiscount,
-    );
+  const paidAmount = roundMoney(itemTotal - allocatedDiscount);
 
-  return Math.max(
-    0,
-    paidAmount,
-  );
+  return Math.max(0, paidAmount);
 }
 
-async function getVariantSizeColumn(
-  pool: sql.ConnectionPool,
-) {
-  const columns =
-    await getTableColumns(
-      pool,
-      "product_variants",
-    );
+async function getVariantSizeColumn(pool: sql.ConnectionPool) {
+  const columns = await getTableColumns(pool, "product_variants");
 
-  for (const candidate of [
-    "size",
-    "size_label",
-    "variant_size",
-  ]) {
+  for (const candidate of ["size", "size_label", "variant_size"]) {
     if (columns.has(candidate)) {
       return candidate;
     }
@@ -4357,26 +3374,17 @@ async function validateReplacementVariant(
   orderItemId: string,
   requestedSize: string,
 ) {
-  const sizeColumn =
-    await getVariantSizeColumn(
-      pool,
-    );
+  const sizeColumn = await getVariantSizeColumn(pool);
 
   if (!sizeColumn) {
-    throw new Error(
-      "Product size information is not configured.",
-    );
+    throw new Error("Product size information is not configured.");
   }
 
-  const original =
-    await pool
-      .request()
-      .input(
-        "orderItemId",
-        orderItemId,
-      )
-      .query<any>(
-        `
+  const original = await pool
+    .request()
+    .input("orderItemId", orderItemId)
+    .query<any>(
+      `
         SELECT TOP 1
           oi.variant_id variantId,
           pv.product_id productId
@@ -4386,30 +3394,20 @@ async function validateReplacementVariant(
         WHERE oi.id =
           @orderItemId
         `,
-      );
+    );
 
-  const originalRow =
-    original.recordset[0];
+  const originalRow = original.recordset[0];
 
   if (!originalRow) {
-    throw new Error(
-      "Original order item not found.",
-    );
+    throw new Error("Original order item not found.");
   }
 
-  const result =
-    await pool
-      .request()
-      .input(
-        "productId",
-        originalRow.productId,
-      )
-      .input(
-        "requestedSize",
-        requestedSize.trim(),
-      )
-      .query<any>(
-        `
+  const result = await pool
+    .request()
+    .input("productId", originalRow.productId)
+    .input("requestedSize", requestedSize.trim())
+    .query<any>(
+      `
         SELECT TOP 1
           pv.id variantId,
           pv.product_id productId,
@@ -4442,10 +3440,9 @@ async function validateReplacementVariant(
             )
           )
         `,
-      );
+    );
 
-  const replacement =
-    result.recordset[0];
+  const replacement = result.recordset[0];
 
   if (!replacement) {
     throw new Error(
@@ -4453,30 +3450,127 @@ async function validateReplacementVariant(
     );
   }
 
-  if (
-    Number(
-      replacement.available ?? 0,
-    ) <= 0
-  ) {
+  if (Number(replacement.available ?? 0) <= 0) {
     throw new Error(
       "The requested replacement size is currently out of stock.",
     );
   }
 
   return {
-    variantId:
-      replacement.variantId,
-    productId:
-      replacement.productId,
-    sku:
-      replacement.sku,
-    requestedSize:
-      replacement.requestedSize,
-    available:
-      Number(
-        replacement.available,
-      ),
+    variantId: replacement.variantId,
+    productId: replacement.productId,
+    sku: replacement.sku,
+    requestedSize: replacement.requestedSize,
+    available: Number(replacement.available),
   };
+}
+
+type AfterSalesImageInput = {
+  filename: string;
+  contentType: string;
+  dataBase64: string;
+};
+
+async function saveReturnRequestImages(
+  returnRequestId: string,
+  images: AfterSalesImageInput[],
+) {
+  if (!images.length) {
+    return [];
+  }
+
+  if (images.length > MAX_RETURN_IMAGES) {
+    throw new Error("You can upload a maximum of 3 images.");
+  }
+
+  const targetDir = join(RETURN_MEDIA_ROOT, returnRequestId);
+
+  await mkdir(targetDir, { recursive: true });
+
+  const pool = await getDb();
+  const savedImages: Array<{
+    id: string;
+    filename: string;
+    contentType: string;
+    url: string;
+  }> = [];
+
+  for (const image of images) {
+    const contentType = String(image.contentType ?? "")
+      .trim()
+      .toLowerCase();
+
+    const ext = RETURN_IMAGE_TYPES.get(contentType);
+
+    if (!ext) {
+      throw new Error("Fault images must be JPG, PNG, WEBP, or GIF.");
+    }
+
+    const data = Buffer.from(
+      String(image.dataBase64 ?? "").replace(/^data:[^;]+;base64,/, ""),
+      "base64",
+    );
+
+    if (!data.length) {
+      throw new Error("One of the uploaded images is empty.");
+    }
+
+    if (data.length > MAX_RETURN_IMAGE_BYTES) {
+      throw new Error("Each fault image must be smaller than 8 MB.");
+    }
+
+    const safeName =
+      basename(image.filename, extname(image.filename))
+        .replace(/[^a-zA-Z0-9-_]/g, "-")
+        .slice(0, 60) || "fault-image";
+
+    const storageKey = `${returnRequestId}/${randomUUID()}-${safeName}${ext}`;
+
+    const filePath = join(RETURN_MEDIA_ROOT, storageKey);
+
+    await writeFile(filePath, data, { flag: "wx" });
+
+    const id = randomUUID();
+
+    await pool
+      .request()
+      .input("id", id)
+      .input("returnRequestId", returnRequestId)
+      .input("filename", image.filename.slice(0, 255))
+      .input("contentType", contentType)
+      .input("storagePath", storageKey)
+      .query(
+        `
+          INSERT INTO return_request_images
+          (
+            id,
+            return_request_id,
+            filename,
+            content_type,
+            storage_path
+          )
+          VALUES
+          (
+            @id,
+            @returnRequestId,
+            @filename,
+            @contentType,
+            @storagePath
+          )
+        `,
+      );
+
+    savedImages.push({
+      id,
+      filename: image.filename.slice(0, 255),
+      contentType,
+      url:
+        `${env.PUBLIC_API_URL.replace(/\/$/, "")}` +
+        `/media/returns/${storageKey}`,
+    });
+  }
+
+  return savedImages;
 }
 
 export async function requestItemAfterSales(
@@ -4486,58 +3580,46 @@ export async function requestItemAfterSales(
   requestType: string,
   reason: string,
   requestedSize?: string | null,
+  images: AfterSalesImageInput[] = [],
 ) {
-  const normalizedType =
-    String(requestType ?? "")
-      .trim()
-      .toUpperCase();
+  const normalizedType = String(requestType ?? "")
+    .trim()
+    .toUpperCase();
+
+  if (normalizedType === "SIZE_REPLACEMENT" && images.length > 0) {
+    throw new Error("Images are only required for product fault requests.");
+  }
 
   if (
-    ![
-      "PRODUCT_FAULT",
-      "SIZE_REPLACEMENT",
-    ].includes(
-      normalizedType,
-    )
+    normalizedType === "PRODUCT_FAULT" &&
+    (images.length < 1 || images.length > MAX_RETURN_IMAGES)
   ) {
-    throw new Error(
-      "Invalid after-sales request type.",
-    );
+    throw new Error("Please upload 1 to 3 images showing the product fault.");
+  }
+
+  if (!["PRODUCT_FAULT", "SIZE_REPLACEMENT"].includes(normalizedType)) {
+    throw new Error("Invalid after-sales request type.");
   }
 
   if (!reason.trim()) {
-    throw new Error(
-      "Reason is required.",
-    );
+    throw new Error("Reason is required.");
   }
 
   if (
-    normalizedType ===
-      "SIZE_REPLACEMENT" &&
-    !String(
-      requestedSize ?? "",
-    ).trim()
+    normalizedType === "SIZE_REPLACEMENT" &&
+    !String(requestedSize ?? "").trim()
   ) {
-    throw new Error(
-      "Please enter the requested replacement size.",
-    );
+    throw new Error("Please enter the requested replacement size.");
   }
 
   const pool = await getDb();
 
-  const order =
-    await pool
-      .request()
-      .input(
-        "orderId",
-        orderId,
-      )
-      .input(
-        "customerId",
-        customerId,
-      )
-      .query<any>(
-        `
+  const order = await pool
+    .request()
+    .input("orderId", orderId)
+    .input("customerId", customerId)
+    .query<any>(
+      `
         SELECT TOP 1
           id,
           status
@@ -4546,39 +3628,24 @@ export async function requestItemAfterSales(
           AND customer_id =
             @customerId
         `,
-      );
+    );
 
-  const orderRow =
-    order.recordset[0];
+  const orderRow = order.recordset[0];
 
   if (!orderRow) {
-    throw new Error(
-      "Order not found.",
-    );
+    throw new Error("Order not found.");
   }
 
-  if (
-    orderRow.status !==
-    "DELIVERED"
-  ) {
-    throw new Error(
-      "After-sales requests can be made after delivery.",
-    );
+  if (orderRow.status !== "DELIVERED") {
+    throw new Error("After-sales requests can be made after delivery.");
   }
 
-  const orderItem =
-    await pool
-      .request()
-      .input(
-        "orderItemId",
-        orderItemId,
-      )
-      .input(
-        "orderId",
-        orderId,
-      )
-      .query<any>(
-        `
+  const orderItem = await pool
+    .request()
+    .input("orderItemId", orderItemId)
+    .input("orderId", orderId)
+    .query<any>(
+      `
         SELECT TOP 1
           id
         FROM order_items
@@ -4586,25 +3653,17 @@ export async function requestItemAfterSales(
           AND order_id =
             @orderId
         `,
-      );
-
-  if (
-    !orderItem.recordset.length
-  ) {
-    throw new Error(
-      "Order item not found.",
     );
+
+  if (!orderItem.recordset.length) {
+    throw new Error("Order item not found.");
   }
 
-  const existing =
-    await pool
-      .request()
-      .input(
-        "orderItemId",
-        orderItemId,
-      )
-      .query(
-        `
+  const existing = await pool
+    .request()
+    .input("orderItemId", orderItemId)
+    .query(
+      `
         SELECT TOP 1
           id
         FROM return_requests
@@ -4615,90 +3674,49 @@ export async function requestItemAfterSales(
             'CANCELLED'
           )
         `,
-      );
+    );
 
-  if (
-    existing.recordset.length
-  ) {
+  if (existing.recordset.length) {
     throw new Error(
       "An active after-sales request already exists for this item.",
     );
   }
 
-  let replacementVariantId:
-    | string
-    | null = null;
+  let replacementVariantId: string | null = null;
 
-  let normalizedRequestedSize:
-    | string
-    | null =
-    requestedSize?.trim() ||
-    null;
+  let normalizedRequestedSize: string | null = requestedSize?.trim() || null;
 
-  if (
-    normalizedType ===
-    "SIZE_REPLACEMENT"
-  ) {
-    const replacement =
-      await validateReplacementVariant(
-        pool,
-        orderItemId,
-        normalizedRequestedSize!,
-      );
-
-    replacementVariantId =
-      replacement.variantId;
-
-    normalizedRequestedSize =
-      String(
-        replacement.requestedSize ??
-          normalizedRequestedSize,
-      );
-  }
-
-  const calculatedPaidAmount =
-    await calculateOrderItemPaidAmount(
-      orderId,
+  if (normalizedType === "SIZE_REPLACEMENT") {
+    const replacement = await validateReplacementVariant(
+      pool,
       orderItemId,
+      normalizedRequestedSize!,
     );
 
-  const id =
-    randomUUID();
+    replacementVariantId = replacement.variantId;
+
+    normalizedRequestedSize = String(
+      replacement.requestedSize ?? normalizedRequestedSize,
+    );
+  }
+
+  const calculatedPaidAmount = await calculateOrderItemPaidAmount(
+    orderId,
+    orderItemId,
+  );
+
+  const id = randomUUID();
 
   await pool
     .request()
-    .input(
-      "id",
-      id,
-    )
-    .input(
-      "orderId",
-      orderId,
-    )
-    .input(
-      "orderItemId",
-      orderItemId,
-    )
-    .input(
-      "customerId",
-      customerId,
-    )
-    .input(
-      "requestType",
-      normalizedType,
-    )
-    .input(
-      "requestedSize",
-      normalizedRequestedSize,
-    )
-    .input(
-      "reason",
-      reason.trim(),
-    )
-    .input(
-      "replacementVariantId",
-      replacementVariantId,
-    )
+    .input("id", id)
+    .input("orderId", orderId)
+    .input("orderItemId", orderItemId)
+    .input("customerId", customerId)
+    .input("requestType", normalizedType)
+    .input("requestedSize", normalizedRequestedSize)
+    .input("reason", reason.trim())
+    .input("replacementVariantId", replacementVariantId)
     .query(
       `
       INSERT INTO return_requests(
@@ -4728,17 +3746,20 @@ export async function requestItemAfterSales(
       `,
     );
 
+  const savedImages =
+    normalizedType === "PRODUCT_FAULT"
+      ? await saveReturnRequestImages(id, images)
+      : [];
+
   return {
     id,
     orderId,
     orderItemId,
-    requestType:
-      normalizedType,
-    requestedSize:
-      normalizedRequestedSize,
-    calculatedPaidAmountInr:
-      calculatedPaidAmount,
+    requestType: normalizedType,
+    requestedSize: normalizedRequestedSize,
+    calculatedPaidAmountInr: calculatedPaidAmount,
     status: "REQUESTED",
+    images: savedImages,
   };
 }
 
@@ -4746,20 +3767,14 @@ export async function requestItemAfterSales(
    CUSTOMER RETURN / AFTER-SALES LIST
    ============================================================ */
 
-export async function listCustomerReturns(
-  customerId: string,
-) {
+export async function listCustomerReturns(customerId: string) {
   const pool = await getDb();
 
-  const result =
-    await pool
-      .request()
-      .input(
-        "customerId",
-        customerId,
-      )
-      .query<any>(
-        `
+  const result = await pool
+    .request()
+    .input("customerId", customerId)
+    .query<any>(
+      `
         SELECT
           r.id,
           r.order_id orderId,
@@ -4802,49 +3817,27 @@ export async function listCustomerReturns(
         ORDER BY
           r.created_at DESC
         `,
-      );
+    );
 
-  return result.recordset.map(
-    (x: any) => ({
-      ...x,
+  return result.recordset.map((x: any) => ({
+    ...x,
 
-      refundAmountInr:
-        x.refundAmountInr ==
-        null
-          ? null
-          : Number(
-              x.refundAmountInr,
-            ),
+    refundAmountInr:
+      x.refundAmountInr == null ? null : Number(x.refundAmountInr),
 
-      approvedCreditInr:
-        x.approvedCreditInr ==
-        null
-          ? null
-          : Number(
-              x.approvedCreditInr,
-            ),
+    approvedCreditInr:
+      x.approvedCreditInr == null ? null : Number(x.approvedCreditInr),
 
-      adminReviewedAt:
-        x.adminReviewedAt
-          ? new Date(
-              x.adminReviewedAt,
-            ).toISOString()
-          : null,
+    adminReviewedAt: x.adminReviewedAt
+      ? new Date(x.adminReviewedAt).toISOString()
+      : null,
 
-      replacementFulfilledAt:
-        x.replacementFulfilledAt
-          ? new Date(
-              x.replacementFulfilledAt,
-            ).toISOString()
-          : null,
+    replacementFulfilledAt: x.replacementFulfilledAt
+      ? new Date(x.replacementFulfilledAt).toISOString()
+      : null,
 
-      createdAt: new Date(
-        x.createdAt,
-      ).toISOString(),
+    createdAt: new Date(x.createdAt).toISOString(),
 
-      updatedAt: new Date(
-        x.updatedAt,
-      ).toISOString(),
-    }),
-  );
+    updatedAt: new Date(x.updatedAt).toISOString(),
+  }));
 }

@@ -39,7 +39,7 @@ export default function LoginPage() {
       <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Sign in</h1>
       <form
         onSubmit={submit}
-        className="mt-10 space-y-4 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-7"
+        className="mt-10 space-y-4 rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-7"
       >
         <label className="block text-sm">
           Email

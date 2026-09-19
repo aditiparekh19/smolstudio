@@ -33,17 +33,13 @@ export default function WishlistPage() {
     if (loading || !user) return;
 
     void apiClient()
-      .request<{ myWishlist: WishlistItem[] }>(
-        wishlistQuery,
-      )
+      .request<{ myWishlist: WishlistItem[] }>(wishlistQuery)
       .then((result) => {
         setItems(result.myWishlist);
       })
       .catch((e) => {
         setError(
-          e instanceof Error
-            ? e.message
-            : "Unable to load your wishlist.",
+          e instanceof Error ? e.message : "Unable to load your wishlist.",
         );
       });
   }, [loading, user]);
@@ -61,11 +57,7 @@ export default function WishlistPage() {
 
       setItems(result.removeFromWishlist);
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Unable to remove this item.",
-      );
+      setError(e instanceof Error ? e.message : "Unable to remove this item.");
     } finally {
       setBusyId(null);
     }
@@ -73,18 +65,14 @@ export default function WishlistPage() {
 
   if (loading) {
     return (
-      <main className="mx-auto max-w-6xl px-5 py-16">
-        Loading wishlist…
-      </main>
+      <main className="mx-auto max-w-6xl px-5 py-16">Loading wishlist…</main>
     );
   }
 
   if (!user) {
     return (
       <main className="mx-auto max-w-4xl px-5 py-16">
-        <h1 className="font-serif text-5xl text-[#5e473c]">
-          Wishlist
-        </h1>
+        <h1 className="font-serif text-5xl text-[#5e473c]">Wishlist</h1>
 
         <p className="mt-4 text-[#8b7a70]">
           Sign in to save products to your wishlist.
@@ -106,9 +94,7 @@ export default function WishlistPage() {
         Saved for later
       </p>
 
-      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">
-        Wishlist
-      </h1>
+      <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Wishlist</h1>
 
       {error && (
         <p className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">
@@ -117,14 +103,13 @@ export default function WishlistPage() {
       )}
 
       {!items.length ? (
-        <div className="mt-10 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-10 text-center">
+        <div className="mt-10 rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-10 text-center">
           <p className="font-serif text-3xl text-[#5e473c]">
             Nothing saved yet.
           </p>
 
           <p className="mt-3 text-sm text-[#8b7a70]">
-            Save little things you love and come back to them
-            later.
+            Save little things you love and come back to them later.
           </p>
 
           <Link
@@ -135,55 +120,61 @@ export default function WishlistPage() {
           </Link>
         </div>
       ) : (
-        <div className="mt-10 grid grid-cols-2 gap-x-4 gap-y-10 md:grid-cols-3 lg:grid-cols-4">
-          {items.map((item) => (
-            <article key={item.id}>
-              <Link
-                href={`/products/${item.slug}`}
-                className="block"
-              >
-                <div className="relative aspect-[4/5] overflow-hidden rounded-[1.5rem] bg-[#f1e5d7]">
-                  <Image
-                    src={
-                      item.imageUrl ??
-                      `https://placehold.co/900x1100/F3E7D7/5E473C?text=${encodeURIComponent(
-                        item.name,
-                      )}`
-                    }
-                    alt={item.name}
-                    fill
-                    unoptimized
-                    sizes="(max-width: 768px) 50vw, 25vw"
-                    className="object-cover"
-                  />
-                </div>
-              </Link>
-
-              <div className="px-1 pt-3">
-                <Link href={`/products/${item.slug}`}>
-                  <h2 className="text-[15px] font-medium text-[#332c28]">
-                    {item.name}
-                  </h2>
-
-                  <p className="mt-1 text-sm text-[#8b7a70]">
-                    ₹{item.priceInr.toLocaleString("en-IN")}
-                  </p>
+        <>
+          <div className="mt-10 grid grid-cols-2 gap-x-4 gap-y-10 md:grid-cols-3 lg:grid-cols-4">
+            {items.map((item) => (
+              <article key={item.id}>
+                <Link href={`/products/${item.slug}`} className="block">
+                  <div className="relative aspect-[4/5] overflow-hidden rounded-[1.5rem] bg-[#f1e5d7]">
+                    <Image
+                      src={
+                        item.imageUrl ??
+                        `https://placehold.co/900x1100/F3E7D7/5E473C?text=${encodeURIComponent(
+                          item.name,
+                        )}`
+                      }
+                      alt={item.name}
+                      fill
+                      unoptimized
+                      sizes="(max-width: 768px) 50vw, 25vw"
+                      className="object-cover"
+                    />
+                  </div>
                 </Link>
 
-                <button
-                  type="button"
-                  disabled={busyId === item.id}
-                  onClick={() => void remove(item.id)}
-                  className="mt-3 text-xs text-[#8b7a70] underline underline-offset-4 hover:text-[#5e473c] disabled:opacity-50"
-                >
-                  {busyId === item.id
-                    ? "Removing…"
-                    : "Remove"}
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
+                <div className="px-1 pt-3">
+                  <Link href={`/products/${item.slug}`}>
+                    <h2 className="text-[15px] font-medium text-[#332c28]">
+                      {item.name}
+                    </h2>
+
+                    <p className="mt-1 text-sm text-[#8b7a70]">
+                      ₹{item.priceInr.toLocaleString("en-IN")}
+                    </p>
+                  </Link>
+
+                  <button
+                    type="button"
+                    disabled={busyId === item.id}
+                    onClick={() => void remove(item.id)}
+                    className="mt-3 text-xs text-[#8b7a70] underline underline-offset-4 hover:text-[#5e473c] disabled:opacity-50"
+                  >
+                    {busyId === item.id ? "Removing…" : "Remove"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-12 flex justify-center">
+            <Link
+              href="/"
+              className="inline-block rounded-full bg-[#5e473c] px-6 py-3 text-sm text-white transition hover:bg-[#4d392f]"
+            >
+              Continue shopping
+            </Link>
+          </div>
+        </>
       )}
     </main>
   );

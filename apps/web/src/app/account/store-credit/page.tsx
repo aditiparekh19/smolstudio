@@ -101,20 +101,20 @@ export default function StoreCreditPage() {
       </p>
 
       {loading && (
-        <div className="mt-10 rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-7">
+        <div className="mt-10 rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-7">
           <p className="text-sm text-[#8b7a70]">Loading your store credit…</p>
         </div>
       )}
 
       {error && (
-        <div className="mt-10 rounded-[2rem] border border-red-200 bg-red-50 p-7">
+        <div className="mt-10 rounded-4xl border border-red-200 bg-red-50 p-7">
           <p className="text-sm text-red-700">{error}</p>
         </div>
       )}
 
       {credit && !loading && !error && (
         <div className="mt-10 space-y-5">
-          <section className="rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-8">
+          <section className="rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-8">
             <p className="text-xs uppercase tracking-[0.18em] text-[#8b7a70]">
               Available balance
             </p>
@@ -133,7 +133,7 @@ export default function StoreCreditPage() {
           </section>
 
           {credit.reservedInr > 0 && (
-            <section className="rounded-[2rem] border border-[#eadfd5] bg-white p-7">
+            <section className="rounded-4xl border border-[#eadfd5] bg-white p-7">
               <p className="text-xs uppercase tracking-[0.18em] text-[#8b7a70]">
                 Temporarily reserved
               </p>
@@ -153,7 +153,7 @@ export default function StoreCreditPage() {
             </section>
           )}
 
-          <section className="rounded-[2rem] border border-[#eadfd5] bg-white p-7">
+          <section className="rounded-4xl border border-[#eadfd5] bg-white p-7">
             <p className="text-xs uppercase tracking-[0.18em] text-[#8b7a70]">
               Account balance
             </p>
@@ -203,7 +203,7 @@ export default function StoreCreditPage() {
             </div>
           </section>
 
-          <section className="rounded-[2rem] border border-[#eadfd5] bg-white p-7">
+          <section className="rounded-4xl border border-[#eadfd5] bg-white p-7">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-[#8b7a70]">

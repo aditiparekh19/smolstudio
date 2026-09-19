@@ -28,13 +28,17 @@ const orderFields = `
     phone
   }
   items {
-    id
-    productName
-    sku
-    quantity
-    unitPriceInr
-    totalPriceInr
-  }
+  id
+  productName
+  sku
+  quantity
+  unitPriceInr
+  totalPriceInr
+  productId
+  variantId
+  size
+  replacementSizes
+}
 `;
 
 export const checkoutTotalsQuery = gql`
@@ -161,6 +165,7 @@ export const requestItemAfterSalesMutation = gql`
     $requestType: String!
     $reason: String!
     $requestedSize: String
+    $images: [AfterSalesImageInput!]
   ) {
     requestItemAfterSales(
       orderId: $orderId
@@ -168,6 +173,7 @@ export const requestItemAfterSalesMutation = gql`
       requestType: $requestType
       reason: $reason
       requestedSize: $requestedSize
+      images: $images
     ) {
       id
       orderId
@@ -607,16 +613,8 @@ export const adminReturnsQuery = gql`
 `;
 
 export const updateReturnRequestMutation = gql`
-  mutation UpdateReturn(
-    $id: ID!
-    $status: String!
-    $adminNote: String
-  ) {
-    updateReturnRequest(
-      id: $id
-      status: $status
-      adminNote: $adminNote
-    )
+  mutation UpdateReturn($id: ID!, $status: String!, $adminNote: String) {
+    updateReturnRequest(id: $id, status: $status, adminNote: $adminNote)
   }
 `;
 

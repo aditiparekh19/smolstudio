@@ -547,7 +547,8 @@ export async function adminRefundOrder(
 export async function listAdminCustomers(search?: string) {
   const pool = await getDb();
   const request = pool.request();
-  const where = ["1=1"];
+
+  const where = ["c.role = 'CUSTOMER'"];
 
   if (search?.trim()) {
     request.input("search", `%${search.trim()}%`);
@@ -607,29 +608,13 @@ export async function listAdminCustomers(search?: string) {
     `,
   );
 
-  const customers = await Promise.all(
-    r.recordset.map(async (x: any) => {
-      const ordersResult = await pool
-        .request()
-        .input("customerId", x.id)
-        .query<any>(
-          `
-            SELECT
-              id,
-              order_number orderNumber,
-              status,
-              payment_status paymentStatus,
-              CAST(total_inr AS decimal(12,2)) totalInr,
-              created_at createdAt
-            FROM orders
-            WHERE customer_id = @customerId
-            ORDER BY created_at DESC
-          `,
-        );
+  const customers = r.recordset;
 
-      const addressesResult = await pool
+  return Promise.all(
+    customers.map(async (customer: any) => {
+      const addressResult = await pool
         .request()
-        .input("customerId", x.id)
+        .input("customerId", customer.id)
         .query<any>(
           `
             SELECT
@@ -650,31 +635,18 @@ export async function listAdminCustomers(search?: string) {
         );
 
       return {
-        id: x.id,
-        email: x.email,
-        phone: x.phone,
-        firstName: x.firstName,
-        lastName: x.lastName,
-        role: x.role,
-        createdAt: new Date(x.createdAt).toISOString(),
+        ...customer,
 
-        orderCount: Number(x.orderCount ?? 0),
-        totalSpentInr: Number(x.totalSpentInr ?? 0),
+        createdAt: new Date(customer.createdAt).toISOString(),
 
-        orders: ordersResult.recordset.map((order: any) => ({
-          ...order,
-          totalInr: Number(order.totalInr ?? 0),
-          createdAt: new Date(order.createdAt).toISOString(),
-        })),
+        orderCount: Number(customer.orderCount ?? 0),
 
-        addresses: addressesResult.recordset.map((address: any) => ({
-          ...address,
-        })),
+        totalSpentInr: Number(customer.totalSpentInr ?? 0),
+
+        addresses: addressResult.recordset,
       };
     }),
   );
-
-  return customers;
 }
 
 export async function getAdminCustomer(id: string) {

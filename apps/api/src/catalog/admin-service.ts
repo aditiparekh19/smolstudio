@@ -4,7 +4,8 @@ import { basename, extname, join } from "node:path";
 import { getDb } from "../db.js";
 import { env } from "../config.js";
 
-const MEDIA_ROOT = join(process.cwd(), "uploads", "products");
+const MEDIA_ROOT =
+  process.env.MEDIA_ROOT ?? join(process.cwd(), "uploads", "products");
 const ALLOWED_TYPES = new Map([
   ["image/jpeg", ".jpg"],
   ["image/png", ".png"],
@@ -421,16 +422,11 @@ async function removeStoredImage(storageKey: string | null) {
 
 export async function deleteProductImage(id: string) {
   const pool = await getDb();
-  const result = await pool
-    .request()
-    .input("id", id)
-    .query<{
-      productId: string;
-      storageKey: string | null;
-      wasPrimary: boolean;
-    }>(
-      `SELECT product_id productId,storage_key storageKey,is_primary wasPrimary FROM product_images WHERE id=@id`,
-    );
+  const result = await pool.request().input("id", id).query<{
+    productId: string;
+    storageKey: string | null;
+    wasPrimary: boolean;
+  }>(`SELECT product_id productId,storage_key storageKey,is_primary wasPrimary FROM product_images WHERE id=@id`);
   const row = result.recordset[0];
   if (!row) throw new Error("Image not found.");
   await pool

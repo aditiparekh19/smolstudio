@@ -420,7 +420,7 @@ export default function CheckoutPage() {
       <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_360px]">
         <form
           onSubmit={submit}
-          className="rounded-[2rem] border border-[#eadfd5] bg-white p-7"
+          className="rounded-4xl border border-[#eadfd5] bg-white p-7"
         >
           <h2 className="font-serif text-2xl text-[#5e473c]">
             Delivery details
@@ -552,7 +552,7 @@ export default function CheckoutPage() {
           </p>
         </form>
 
-        <aside className="h-fit rounded-[2rem] border border-[#eadfd5] bg-[#fffaf4] p-6">
+        <aside className="h-fit rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-6">
           <p className="text-xs uppercase tracking-[0.2em] text-[#8b7a70]">
             Order summary
           </p>
@@ -578,7 +578,7 @@ export default function CheckoutPage() {
                   setCoupon(value);
                   setCouponError("");
                 }}
-                placeholder="WELCOME5"
+                placeholder=""
                 className="min-w-0 flex-1 rounded-xl border border-[#d9cbc0] px-3 py-3"
               />
 

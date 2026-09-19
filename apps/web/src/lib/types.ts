@@ -9,9 +9,20 @@ export type ProductCard = {
   categorySlug: string;
 };
 
-export type ProductVariant = { id: string; size: string; color: string; stock: number };
+export type ProductVariant = {
+  id: string;
+  size: string;
+  color: string;
+  stock: number;
+};
 
-export type ProductImage = { id:string; url:string; altText:string|null; sortOrder:number; isPrimary:boolean };
+export type ProductImage = {
+  id: string;
+  url: string;
+  altText: string | null;
+  sortOrder: number;
+  isPrimary: boolean;
+};
 
 export type Product = ProductCard & {
   sku: string;
@@ -22,12 +33,41 @@ export type Product = ProductCard & {
   variants: ProductVariant[];
 };
 
+export type ProductReview = {
+  id: string;
+  productId: string;
+  customerId: string | null;
+  customerName: string | null;
+  customerEmail?: string | null;
+  productName?: string | null;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  isPublished: boolean;
+  createdAt: string;
+  verifiedPurchase: boolean;
+};
+
+export type AdminReview = {
+  id: string;
+  productId: string;
+  customerId: string;
+  productName: string;
+  customerName: string | null;
+  customerEmail: string;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  isPublished: boolean;
+  createdAt: string;
+};
+
 export type User = {
   id: string;
   email: string;
   firstName: string | null;
   lastName: string | null;
-  role: 'CUSTOMER' | 'ADMIN' | 'STAFF';
+  role: "CUSTOMER" | "ADMIN" | "STAFF";
 };
 
 export type CartItem = {
@@ -43,4 +83,9 @@ export type CartItem = {
   totalInr: number;
 };
 
-export type Cart = { id: string; items: CartItem[]; subtotalInr: number; count: number };
+export type Cart = {
+  id: string;
+  items: CartItem[];
+  subtotalInr: number;
+  count: number;
+};
