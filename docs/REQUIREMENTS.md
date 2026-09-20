@@ -1,4 +1,4 @@
-# SmolStudio requirements — v0.1
+# SmolStudio requirements - v0.1
 
 ## Business goal
 

@@ -60,11 +60,14 @@ services:
       SHIPROCKET_EMAIL: ${SHIPROCKET_EMAIL:-}
       SHIPROCKET_PASSWORD: ${SHIPROCKET_PASSWORD:-}
       MEDIA_ROOT: /app/apps/api/uploads/products
+      RETURN_MEDIA_ROOT: /app/apps/api/uploads/returns
     ports:
       - "4000:4000"
     volumes:
       - smolstudio_product_uploads:/app/apps/api/uploads
+      - smolstudio_return_uploads:/app/apps/api/uploads/returns
 
 volumes:
   smolstudio_sql_data:
   smolstudio_product_uploads:
+  smolstudio_return_uploads:

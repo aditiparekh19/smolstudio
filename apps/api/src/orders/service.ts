@@ -3705,6 +3705,28 @@ export async function requestItemAfterSales(
     orderItemId,
   );
 
+  // Prevent a customer from submitting another request
+  // for an item whose previous return request was rejected.
+  const rejectedRequest = await pool
+    .request()
+    .input("orderId", orderId)
+    .input("orderItemId", orderItemId)
+    .query<{ count: number }>(
+      `
+    SELECT COUNT(*) AS count
+    FROM return_requests
+    WHERE order_id = @orderId
+      AND order_item_id = @orderItemId
+      AND status = 'REJECTED'
+    `,
+    );
+
+  if (Number(rejectedRequest.recordset[0]?.count ?? 0) > 0) {
+    throw new Error(
+      "A return request for this item was already rejected and cannot be submitted again.",
+    );
+  }
+
   const id = randomUUID();
 
   await pool
@@ -3717,6 +3739,7 @@ export async function requestItemAfterSales(
     .input("requestedSize", normalizedRequestedSize)
     .input("reason", reason.trim())
     .input("replacementVariantId", replacementVariantId)
+    .input("refundAmount", calculatedPaidAmount)
     .query(
       `
       INSERT INTO return_requests(
@@ -3729,6 +3752,7 @@ export async function requestItemAfterSales(
         reason,
         replacement_variant_id,
         status,
+        refund_amount_inr,
         approved_credit_inr
       )
       VALUES(
@@ -3741,6 +3765,7 @@ export async function requestItemAfterSales(
         @reason,
         @replacementVariantId,
         'REQUESTED',
+        @refundAmount,
         NULL
       )
       `,
@@ -3819,25 +3844,44 @@ export async function listCustomerReturns(customerId: string) {
         `,
     );
 
-  return result.recordset.map((x: any) => ({
-    ...x,
+  return result.recordset.map((x: any) => {
+    const images = x.imagesJson ? JSON.parse(x.imagesJson) : [];
 
-    refundAmountInr:
-      x.refundAmountInr == null ? null : Number(x.refundAmountInr),
+    return {
+      ...x,
 
-    approvedCreditInr:
-      x.approvedCreditInr == null ? null : Number(x.approvedCreditInr),
+      images: images.map((image: any) => ({
+        id: image.id,
+        filename: image.filename,
+        contentType: image.contentType,
+        url:
+          `${(process.env.PUBLIC_API_URL ?? "").replace(/\/$/, "")}` +
+          `/media/returns/${image.storagePath}`,
+      })),
 
-    adminReviewedAt: x.adminReviewedAt
-      ? new Date(x.adminReviewedAt).toISOString()
-      : null,
+      refundAmountInr:
+        x.refundAmountInr == null ? null : Number(x.refundAmountInr),
 
-    replacementFulfilledAt: x.replacementFulfilledAt
-      ? new Date(x.replacementFulfilledAt).toISOString()
-      : null,
+      approvedCreditInr:
+        x.approvedCreditInr == null ? null : Number(x.approvedCreditInr),
 
-    createdAt: new Date(x.createdAt).toISOString(),
+      unitPriceInr: x.unitPriceInr == null ? null : Number(x.unitPriceInr),
 
-    updatedAt: new Date(x.updatedAt).toISOString(),
-  }));
+      totalPriceInr: x.totalPriceInr == null ? null : Number(x.totalPriceInr),
+
+      quantity: x.quantity == null ? null : Number(x.quantity),
+
+      createdAt: new Date(x.createdAt).toISOString(),
+
+      updatedAt: new Date(x.updatedAt).toISOString(),
+
+      adminReviewedAt: x.adminReviewedAt
+        ? new Date(x.adminReviewedAt).toISOString()
+        : null,
+
+      replacementFulfilledAt: x.replacementFulfilledAt
+        ? new Date(x.replacementFulfilledAt).toISOString()
+        : null,
+    };
+  });
 }

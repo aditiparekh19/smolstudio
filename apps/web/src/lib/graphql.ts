@@ -10,6 +10,22 @@ export function apiClient(headers?: HeadersInit) {
   });
 }
 
+export function getGraphQLErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message;
+
+    const match = message.match(/"errors":\[\{"message":"([^"]+)"/);
+
+    if (match?.[1]) {
+      return match[1];
+    }
+
+    return message;
+  }
+
+  return "Something went wrong. Please try again.";
+}
+
 export const graphqlClient = apiClient();
 
 export async function apiRequest<T>(
@@ -369,12 +385,7 @@ export const updateProductReviewMutation = gql`
     $title: String
     $body: String!
   ) {
-    updateProductReview(
-      id: $id
-      rating: $rating
-      title: $title
-      body: $body
-    ) {
+    updateProductReview(id: $id, rating: $rating, title: $title, body: $body) {
       id
       productId
       customerName
@@ -394,14 +405,8 @@ export const deleteProductReviewMutation = gql`
 `;
 
 export const adminReviewsQuery = gql`
-  query AdminReviews(
-    $productId: ID
-    $published: Boolean
-  ) {
-    adminReviews(
-      productId: $productId
-      published: $published
-    ) {
+  query AdminReviews($productId: ID, $published: Boolean) {
+    adminReviews(productId: $productId, published: $published) {
       id
       productId
       customerId

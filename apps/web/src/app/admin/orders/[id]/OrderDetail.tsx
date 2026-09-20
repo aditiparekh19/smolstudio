@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { apiClient } from "../../../../lib/graphql";
+import { apiClient, getGraphQLErrorMessage } from "../../../../lib/graphql";
 import {
   adminOrderQuery,
   adminRefundMutation,
   adminUpdateOrderMutation,
   adminReturnsQuery,
-  updateReturnRequestMutation,
 } from "../../../../lib/orders";
 import { useAuth } from "../../../../components/AuthProvider";
 
@@ -66,6 +65,12 @@ type AfterSalesRequest = {
   replacementFulfilledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  images: {
+    id: string;
+    filename: string;
+    contentType: string;
+    url: string;
+  }[];
 };
 
 const statuses = [
@@ -80,6 +85,30 @@ const statuses = [
   "PARTIALLY_REFUNDED",
   "REFUNDED",
 ];
+
+function formatAdminDate(value: unknown) {
+  if (!value) return "-";
+
+  const raw = String(value).trim();
+
+  // Handle SQL Server-style datetime values such as:
+  // 2026-09-19 18:42:31.123
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+
+  const date = new Date(normalized);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function AdminOrderClient({ id }: { id: string }) {
   const { user, loading } = useAuth();
@@ -97,12 +126,9 @@ export default function AdminOrderClient({ id }: { id: string }) {
   const [refundReason, setRefundReason] = useState("Customer refund");
 
   const [busy, setBusy] = useState(true);
-  const [afterSalesBusy, setAfterSalesBusy] = useState(false);
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-
-  const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
 
   async function loadAfterSales() {
     const r = await apiClient().request<{
@@ -114,12 +140,6 @@ export default function AdminOrderClient({ id }: { id: string }) {
     );
 
     setAfterSales(requests);
-
-    const notes: Record<string, string> = {};
-    for (const request of requests) {
-      notes[request.id] = request.adminNote || "";
-    }
-    setAdminNotes(notes);
   }
 
   useEffect(() => {
@@ -168,7 +188,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
       setO(r.updateAdminOrder);
       setMessage("Order updated.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Update failed.");
+      setError(getGraphQLErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -229,53 +249,6 @@ export default function AdminOrderClient({ id }: { id: string }) {
       setError(e instanceof Error ? e.message : "Refund failed.");
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function updateAfterSales(
-    request: AfterSalesRequest,
-    nextStatus: "APPROVED" | "REJECTED",
-  ) {
-    const noteText = (adminNotes[request.id] || "").trim();
-
-    if (nextStatus === "REJECTED" && !noteText) {
-      setError("Please enter an admin note explaining the rejection.");
-      return;
-    }
-
-    setError("");
-    setMessage("");
-    setAfterSalesBusy(true);
-
-    try {
-      await apiClient().request<{ updateReturnRequest: string }>(
-        updateReturnRequestMutation,
-        {
-          id: request.id,
-          status: nextStatus,
-          adminNote: noteText || null,
-        },
-      );
-
-      await loadAfterSales();
-
-      if (nextStatus === "APPROVED") {
-        setMessage(
-          request.requestType === "PRODUCT_FAULT"
-            ? "Product-fault request approved. Store credit has been processed."
-            : "Size-replacement request approved.",
-        );
-      } else {
-        setMessage("After-sales request rejected.");
-      }
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Unable to update after-sales request.",
-      );
-    } finally {
-      setAfterSalesBusy(false);
     }
   }
 
@@ -513,11 +486,7 @@ export default function AdminOrderClient({ id }: { id: string }) {
                         <div className="text-right text-sm">
                           <p className="text-xs text-[#8b7a70]">Requested</p>
 
-                          <p>
-                            {new Date(request.createdAt).toLocaleString(
-                              "en-IN",
-                            )}
-                          </p>
+                          <p>{formatAdminDate(request.createdAt)}</p>
                         </div>
                       </div>
 
@@ -615,62 +584,30 @@ export default function AdminOrderClient({ id }: { id: string }) {
 
                       {isPending && (
                         <div className="mt-5 border-t border-[#eadfd5] pt-5">
-                          <label className="block text-sm">
-                            Admin note
-                            <textarea
-                              value={adminNotes[request.id] || ""}
-                              onChange={(e) =>
-                                setAdminNotes((current) => ({
-                                  ...current,
-                                  [request.id]: e.target.value,
-                                }))
-                              }
-                              rows={3}
-                              placeholder={
-                                isProductFault
-                                  ? "Optional note for approval, or explain why the request is rejected."
-                                  : "Add a note about the size replacement decision."
-                              }
-                              className="mt-2 w-full resize-none rounded-xl border border-[#d9cbc0] bg-white px-3 py-3 text-sm outline-none focus:border-[#8b7a70]"
-                            />
-                          </label>
+                          <div className="rounded-2xl border border-[#eadfd5] bg-white p-4">
+                            <p className="text-sm font-medium text-[#5e473c]">
+                              Review this request in Returns
+                            </p>
 
-                          <div className="mt-4 flex flex-wrap gap-3">
-                            <button
-                              type="button"
-                              disabled={afterSalesBusy}
-                              onClick={() =>
-                                void updateAfterSales(request, "APPROVED")
-                              }
-                              className="rounded-full bg-[#5e473c] px-5 py-3 text-sm text-white disabled:opacity-50"
-                            >
-                              {afterSalesBusy
-                                ? "Processing…"
-                                : isProductFault
-                                  ? "Approve & Issue Credit"
-                                  : "Approve Replacement"}
-                            </button>
+                            <p className="mt-1 text-xs leading-5 text-[#8b7a70]">
+                              {isProductFault
+                                ? "Review the product-fault photos and request details on the Returns page before approving or rejecting this request."
+                                : "Review the size-replacement request and complete the approval or rejection from the Returns page."}
+                            </p>
 
-                            <button
-                              type="button"
-                              disabled={afterSalesBusy}
-                              onClick={() =>
-                                void updateAfterSales(request, "REJECTED")
-                              }
-                              className="rounded-full border border-red-200 bg-white px-5 py-3 text-sm text-red-700 disabled:opacity-50"
+                            <Link
+                              href="/admin/returns"
+                              className="mt-4 inline-flex items-center justify-center rounded-full bg-[#5e473c] px-5 py-3 text-sm text-white transition hover:bg-[#46352d]"
                             >
-                              Reject Request
-                            </button>
+                              Open Returns →
+                            </Link>
                           </div>
                         </div>
                       )}
 
                       {request.adminReviewedAt && (
                         <p className="mt-4 text-xs text-[#8b7a70]">
-                          Reviewed{" "}
-                          {new Date(request.adminReviewedAt).toLocaleString(
-                            "en-IN",
-                          )}
+                          Reviewed {formatAdminDate(request.adminReviewedAt)}
                         </p>
                       )}
                     </div>

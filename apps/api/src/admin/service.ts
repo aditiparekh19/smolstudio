@@ -336,17 +336,20 @@ export async function updateAdminOrder(input: {
   const pool = await getDb();
 
   const current = (
-    await pool
-      .request()
-      .input("id", input.id)
-      .query<any>(
-        `SELECT TOP 1
-          status,
-          payment_status paymentStatus
-        FROM orders
-        WHERE id=@id`,
-      )
-  ).recordset[0];
+  await pool
+    .request()
+    .input("id", input.id)
+    .query<any>(
+      `
+      SELECT TOP 1
+        status,
+        payment_status paymentStatus,
+        payment_provider paymentProvider
+      FROM orders
+      WHERE id=@id
+      `,
+    )
+).recordset[0];
 
   if (!current) {
     throw new Error("Order not found.");
@@ -391,6 +394,28 @@ export async function updateAdminOrder(input: {
        INSERT INTO order_status_history(order_id,status,note)
        VALUES(@id,@status,@note)`,
     );
+
+  if (input.status === "DELIVERED") {
+    await pool
+      .request()
+      .input("replacementOrderId", input.id)
+      .query(
+        `
+      UPDATE return_requests
+      SET
+        status = 'COMPLETED',
+        completed_at = COALESCE(completed_at, SYSUTCDATETIME()),
+        replacement_fulfilled_at =
+          COALESCE(replacement_fulfilled_at, SYSUTCDATETIME()),
+        admin_note = 'Replacement order delivered',
+        updated_at = SYSUTCDATETIME()
+      WHERE replacement_order_id = @replacementOrderId
+        AND request_type = 'SIZE_REPLACEMENT'
+        AND status = 'PROCESSING'
+        AND reviewed_at IS NOT NULL
+      `,
+      );
+  }
 
   void sendOrderStatusEmail(input.id, input.status);
 
@@ -1068,14 +1093,16 @@ export async function deleteCoupon(id: string) {
 ========================================================= */
 
 /**
- * Lists both:
+ * Lists refund/return requests for the admin Returns screen:
  *
- * 1. New after-sales requests:
+ * 1. New product-fault requests:
  *    PRODUCT_FAULT
- *    SIZE_REPLACEMENT
  *
  * 2. Legacy return requests:
  *    requestType = NULL
+ *
+ * SIZE_REPLACEMENT requests are handled separately
+ * in the admin After-Sales Requests screen.
  *
  * New fields are deliberately nullable so old rows continue
  * to work.
@@ -1084,11 +1111,12 @@ export async function listReturnRequests(status?: string) {
   const pool = await getDb();
   const req = pool.request();
 
-  let where = "1=1";
+  let where =
+    "(r.request_type IS NULL OR r.request_type IN ('PRODUCT_FAULT', 'SIZE_REPLACEMENT'))";
 
   if (status?.trim()) {
     req.input("status", status.trim());
-    where = "r.status=@status";
+    where += " AND r.status=@status";
   }
 
   const r = await req.query<any>(
@@ -1114,10 +1142,15 @@ export async function listReturnRequests(status?: string) {
 
       r.replacement_variant_id replacementVariantId,
       r.replacement_order_id replacementOrderId,
-
       r.admin_note adminNote,
       r.admin_reviewed_at adminReviewedAt,
       r.admin_reviewed_by adminReviewedBy,
+      r.processing_at processingAt,
+      r.picked_up_at pickedUpAt,
+      r.received_at receivedAt,
+      r.reviewed_at reviewedAt,
+      r.completed_at completedAt,
+      r.pickup_tracking_number pickupTrackingNumber,
       r.replacement_fulfilled_at replacementFulfilledAt,
 
       r.created_at createdAt,
@@ -1129,7 +1162,18 @@ export async function listReturnRequests(status?: string) {
       CAST(oi.unit_price_inr AS decimal(12,2)) unitPriceInr,
       CAST(oi.total_price_inr AS decimal(12,2)) totalPriceInr,
 
-      pv.sku replacementSku
+    pv.sku replacementSku,
+
+      (
+        SELECT
+          rri.id,
+          rri.filename,
+          rri.content_type contentType,
+          rri.storage_path storagePath
+        FROM return_request_images rri
+        WHERE rri.return_request_id = r.id
+        FOR JSON PATH
+      ) imagesJson
 
     FROM return_requests r
 
@@ -1150,33 +1194,68 @@ export async function listReturnRequests(status?: string) {
     ORDER BY r.created_at DESC`,
   );
 
-  return r.recordset.map((x: any) => ({
-    ...x,
+  return r.recordset.map((x: any) => {
+    const images = x.imagesJson ? JSON.parse(x.imagesJson) : [];
 
-    refundAmountInr:
-      x.refundAmountInr == null ? null : Number(x.refundAmountInr),
+    return {
+      ...x,
 
-    approvedCreditInr:
-      x.approvedCreditInr == null ? null : Number(x.approvedCreditInr),
+      refundAmountInr:
+        x.refundAmountInr == null ? null : Number(x.refundAmountInr),
 
-    unitPriceInr: x.unitPriceInr == null ? null : Number(x.unitPriceInr),
+      approvedCreditInr:
+        x.approvedCreditInr == null ? null : Number(x.approvedCreditInr),
 
-    totalPriceInr: x.totalPriceInr == null ? null : Number(x.totalPriceInr),
+      quantity: x.quantity == null ? null : Number(x.quantity),
 
-    quantity: x.quantity == null ? null : Number(x.quantity),
+      unitPriceInr: x.unitPriceInr == null ? null : Number(x.unitPriceInr),
 
-    createdAt: new Date(x.createdAt).toISOString(),
+      totalPriceInr: x.totalPriceInr == null ? null : Number(x.totalPriceInr),
 
-    updatedAt: new Date(x.updatedAt).toISOString(),
+      createdAt:
+        x.createdAt == null ? null : new Date(x.createdAt).toISOString(),
 
-    adminReviewedAt: x.adminReviewedAt
-      ? new Date(x.adminReviewedAt).toISOString()
-      : null,
+      updatedAt:
+        x.updatedAt == null ? null : new Date(x.updatedAt).toISOString(),
 
-    replacementFulfilledAt: x.replacementFulfilledAt
-      ? new Date(x.replacementFulfilledAt).toISOString()
-      : null,
-  }));
+      adminReviewedAt:
+        x.adminReviewedAt == null
+          ? null
+          : new Date(x.adminReviewedAt).toISOString(),
+
+      processingAt:
+        x.processingAt == null ? null : new Date(x.processingAt).toISOString(),
+
+      pickedUpAt:
+        x.pickedUpAt == null ? null : new Date(x.pickedUpAt).toISOString(),
+
+      receivedAt:
+        x.receivedAt == null ? null : new Date(x.receivedAt).toISOString(),
+
+      reviewedAt:
+        x.reviewedAt == null ? null : new Date(x.reviewedAt).toISOString(),
+
+      completedAt:
+        x.completedAt == null ? null : new Date(x.completedAt).toISOString(),
+
+      pickupTrackingNumber:
+        x.pickupTrackingNumber == null ? null : String(x.pickupTrackingNumber),
+
+      replacementFulfilledAt:
+        x.replacementFulfilledAt == null
+          ? null
+          : new Date(x.replacementFulfilledAt).toISOString(),
+
+      images: images.map((image: any) => ({
+        id: image.id,
+        filename: image.filename,
+        contentType: image.contentType,
+        url:
+          `${(process.env.PUBLIC_API_URL ?? "").replace(/\/$/, "")}` +
+          `/media/returns/${image.storagePath}`,
+      })),
+    };
+  });
 }
 
 /* =========================================================
@@ -1342,6 +1421,294 @@ async function addStoreCredit(
   };
 }
 
+async function createReplacementOrderForReturnRequest(returnRequestId: string) {
+  const pool = await getDb();
+
+  const transaction = pool.transaction();
+
+  await transaction.begin();
+
+  try {
+    const request = transaction.request();
+
+    const result = await request
+      .input("returnRequestId", returnRequestId)
+      .query<any>(
+        `
+        SELECT TOP 1
+          rr.id returnRequestId,
+          rr.status returnStatus,
+          rr.request_type requestType,
+          rr.order_id orderId,
+          rr.order_item_id orderItemId,
+          rr.customer_id customerId,
+          rr.replacement_variant_id replacementVariantId,
+          rr.replacement_order_id replacementOrderId,
+          rr.picked_up_at pickedUpAt,
+          rr.received_at receivedAt,
+          rr.reviewed_at reviewedAt,
+
+          o.shipping_address_json shippingAddressJson,
+
+          oi.quantity quantity,
+
+          pv.sku replacementSku,
+          p.name replacementProductName,
+
+          i.quantity_available quantityAvailable,
+          i.quantity_reserved quantityReserved
+
+        FROM return_requests rr
+
+        INNER JOIN orders o
+          ON o.id = rr.order_id
+
+        INNER JOIN order_items oi
+          ON oi.id = rr.order_item_id
+         AND oi.order_id = rr.order_id
+
+        INNER JOIN product_variants pv
+          ON pv.id = rr.replacement_variant_id
+
+        INNER JOIN products p
+          ON p.id = pv.product_id
+
+        INNER JOIN inventory i
+          ON i.variant_id = pv.id
+
+        WHERE rr.id = @returnRequestId
+        `,
+      );
+
+    const row = result.recordset[0];
+
+    if (!row) {
+      throw new Error("Replacement request not found.");
+    }
+
+    if (row.requestType !== "SIZE_REPLACEMENT") {
+      throw new Error(
+        "Replacement order can only be created for a size replacement.",
+      );
+    }
+
+    if (row.replacementOrderId) {
+      await transaction.commit();
+
+      return {
+        replacementOrderId: row.replacementOrderId,
+      };
+    }
+
+    if (row.returnStatus !== "PROCESSING") {
+      throw new Error(
+        "The size replacement must be in processing before the replacement order can be created.",
+      );
+    }
+
+    if (!row.pickedUpAt || !row.receivedAt || !row.reviewedAt) {
+      throw new Error(
+        "The original item must be picked up, received, and reviewed before the replacement order can be created.",
+      );
+    }
+
+    if (!row.replacementVariantId) {
+      throw new Error(
+        "The size replacement request is missing its replacement variant.",
+      );
+    }
+
+    const quantity = Number(row.quantity);
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      throw new Error("Invalid replacement quantity.");
+    }
+
+    const availableQuantity =
+      Number(row.quantityAvailable ?? 0) - Number(row.quantityReserved ?? 0);
+
+    if (availableQuantity < quantity) {
+      throw new Error("The requested replacement size is no longer available.");
+    }
+
+    if (!row.shippingAddressJson) {
+      throw new Error("The original order is missing its shipping address.");
+    }
+
+    const replacementOrderId = randomUUID();
+
+    const orderNumber = `SS-EX-${new Date()
+      .toISOString()
+      .slice(0, 10)
+      .replace(/-/g, "")}-${replacementOrderId.slice(0, 8).toUpperCase()}`;
+
+    /*
+     * This is a zero-value exchange order.
+     * No Razorpay payment is created and no store credit is used.
+     */
+    await transaction
+      .request()
+      .input("orderId", replacementOrderId)
+      .input("orderNumber", orderNumber)
+      .input("customerId", row.customerId)
+      .input("shippingAddress", row.shippingAddressJson)
+      .input("paymentReference", `EXCHANGE-${returnRequestId}`)
+      .query(
+        `
+        INSERT INTO orders(
+          id,
+          order_number,
+          customer_id,
+          status,
+          currency,
+          subtotal_inr,
+          shipping_inr,
+          discount_inr,
+          tax_inr,
+          total_inr,
+          store_credit_applied_inr,
+          store_credit_released_at,
+          shipping_address_json,
+          payment_provider,
+          payment_status,
+          payment_reference,
+          payment_order_id,
+          coupon_code
+        )
+        VALUES(
+          @orderId,
+          @orderNumber,
+          @customerId,
+          'PROCESSING',
+          'INR',
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          NULL,
+          @shippingAddress,
+          'EXCHANGE',
+          'CAPTURED',
+          @paymentReference,
+          NULL,
+          NULL
+        )
+        `,
+      );
+
+    await transaction
+      .request()
+      .input("orderItemId", randomUUID())
+      .input("orderId", replacementOrderId)
+      .input("variantId", row.replacementVariantId)
+      .input("productName", row.replacementProductName)
+      .input("sku", row.replacementSku)
+      .input("quantity", quantity)
+      .query(
+        `
+        INSERT INTO order_items(
+          id,
+          order_id,
+          variant_id,
+          product_name,
+          sku,
+          quantity,
+          unit_price_inr,
+          total_price_inr
+        )
+        VALUES(
+          @orderItemId,
+          @orderId,
+          @variantId,
+          @productName,
+          @sku,
+          @quantity,
+          0,
+          0
+        )
+        `,
+      );
+
+    /*
+     * The replacement is being allocated immediately.
+     * Reduce physical available stock but leave existing
+     * reservations untouched.
+     */
+    const inventoryUpdate = await transaction
+      .request()
+      .input("variantId", row.replacementVariantId)
+      .input("quantity", quantity)
+      .query(
+        `
+        UPDATE inventory
+        SET
+          quantity_available = quantity_available - @quantity,
+          updated_at = SYSUTCDATETIME()
+        WHERE variant_id = @variantId
+          AND quantity_available - quantity_reserved >= @quantity
+        `,
+      );
+
+    if (inventoryUpdate.rowsAffected[0] !== 1) {
+      throw new Error("The requested replacement size is no longer available.");
+    }
+
+    await transaction
+      .request()
+      .input("orderId", replacementOrderId)
+      .input(
+        "note",
+        `Replacement order created for return request ${returnRequestId}`,
+      )
+      .query(
+        `
+        INSERT INTO order_status_history(
+          order_id,
+          status,
+          note
+        )
+        VALUES(
+          @orderId,
+          'PROCESSING',
+          @note
+        )
+        `,
+      );
+
+    await transaction
+      .request()
+      .input("returnRequestId", returnRequestId)
+      .input("replacementOrderId", replacementOrderId)
+      .query(
+        `
+        UPDATE return_requests
+        SET
+          replacement_order_id = @replacementOrderId,
+          admin_note = 'Replacement order created',
+          updated_at = SYSUTCDATETIME()
+        WHERE id = @returnRequestId
+        `,
+      );
+
+    await transaction.commit();
+
+    return {
+      replacementOrderId,
+      orderNumber,
+    };
+  } catch (error) {
+    try {
+      await transaction.rollback();
+    } catch {
+      // Ignore rollback errors and preserve the original error.
+    }
+
+    throw error;
+  }
+}
+
 /* =========================================================
    UPDATE AFTER-SALES REQUEST
 ========================================================= */
@@ -1367,12 +1734,23 @@ export async function updateReturnRequest(
   status: string,
   adminNote?: string | null,
   adminId?: string | null,
+  pickupTrackingNumber?: string | null,
 ) {
   const normalizedStatus = String(status || "")
     .trim()
     .toUpperCase();
 
-  if (!["APPROVED", "REJECTED", "CANCELLED"].includes(normalizedStatus)) {
+  if (
+    ![
+      "APPROVED",
+      "PICKED_UP",
+      "RECEIVED",
+      "REVIEWED",
+      "COMPLETED",
+      "REJECTED",
+      "CANCELLED",
+    ].includes(normalizedStatus)
+  ) {
     throw new Error("Invalid return status.");
   }
 
@@ -1394,6 +1772,10 @@ export async function updateReturnRequest(
           r.refund_amount_inr refundAmountInr,
           r.approved_credit_inr approvedCreditInr,
           r.status currentStatus,
+          r.processing_at processingAt,
+          r.picked_up_at pickedUpAt,
+          r.received_at receivedAt,
+          r.reviewed_at reviewedAt,
 
           o.status orderStatus,
           o.payment_status paymentStatus,
@@ -1420,8 +1802,8 @@ export async function updateReturnRequest(
     throw new Error("Return request not found.");
   }
 
-  if (r.currentStatus !== "REQUESTED") {
-    throw new Error("Return request is already processed.");
+  if (r.currentStatus !== "REQUESTED" && r.currentStatus !== "PROCESSING") {
+    throw new Error("Return request is already completed.");
   }
 
   const requestType = r.requestType
@@ -1456,54 +1838,269 @@ export async function updateReturnRequest(
   }
 
   /* -------------------------------------------------------
-     LEGACY RETURN / RAZORPAY REFUND
+   APPROVE REQUEST
+   Approval only moves the request into PROCESSING.
 
-     requestType IS NULL means this is one of the old
-     return/refund requests.
+   No refund or store credit is issued here.
+   Money is handled only after the item has been
+   picked up, received, and reviewed.
+------------------------------------------------------- */
 
-     IMPORTANT:
-     If an admin has already issued a partial manual refund
-     against this request, only the remaining amount is
-     refunded here. This prevents duplicate Razorpay refunds.
-  ------------------------------------------------------- */
-
-  if (!requestType) {
-    const requestedRefundAmount =
-      r.refundAmountInr == null ? 0 : Number(r.refundAmountInr);
-
-    if (!Number.isFinite(requestedRefundAmount) || requestedRefundAmount <= 0) {
-      throw new Error("This legacy return has no valid refund amount.");
+  if (normalizedStatus === "APPROVED") {
+    if (r.currentStatus !== "REQUESTED") {
+      throw new Error("Only a requested return can be approved.");
     }
 
-    if (r.paymentProvider !== "RAZORPAY" || !r.paymentReference) {
+    await pool
+      .request()
+      .input("id", id)
+      .input("note", note)
+      .input("adminId", adminId || null)
+      .query(
+        `UPDATE return_requests
+       SET
+         status='PROCESSING',
+         processing_at=COALESCE(processing_at, SYSUTCDATETIME()),
+         admin_note=@note,
+         admin_reviewed_at=SYSUTCDATETIME(),
+         admin_reviewed_by=@adminId,
+         updated_at=SYSUTCDATETIME()
+       WHERE id=@id`,
+      );
+
+    return true;
+  }
+
+  /* -------------------------------------------------------
+   PICKED UP
+   Admin confirms that Delhivery has collected the item.
+------------------------------------------------------- */
+
+  if (normalizedStatus === "PICKED_UP") {
+    if (r.currentStatus !== "PROCESSING") {
+      throw new Error("Only a processing return can be marked as picked up.");
+    }
+
+    if (!r.processingAt) {
       throw new Error(
-        "This order does not have a refundable Razorpay payment.",
+        "The return must be approved and moved to processing first.",
       );
     }
 
-    if (
-      !["CAPTURED", "PARTIALLY_REFUNDED"].includes(
-        String(r.paymentStatus || "").toUpperCase(),
-      )
-    ) {
+    await pool
+      .request()
+      .input("id", id)
+      .input("trackingNumber", pickupTrackingNumber?.trim() || null)
+      .input("note", note)
+      .query(
+        `UPDATE return_requests
+       SET
+         status='PROCESSING',
+         picked_up_at=COALESCE(picked_up_at, SYSUTCDATETIME()),
+         pickup_tracking_number=
+           COALESCE(@trackingNumber, pickup_tracking_number),
+         admin_note=@note,
+         updated_at=SYSUTCDATETIME()
+       WHERE id=@id`,
+      );
+
+    return true;
+  }
+
+  /* -------------------------------------------------------
+   RECEIVED
+   Admin confirms that the returned item has physically
+   arrived and is now in the shop/warehouse.
+------------------------------------------------------- */
+
+  if (normalizedStatus === "RECEIVED") {
+    if (r.currentStatus !== "PROCESSING") {
+      throw new Error("Only a processing return can be marked as received.");
+    }
+
+    if (!r.pickedUpAt) {
       throw new Error(
-        "This order does not have a refundable Razorpay payment.",
+        "The item must be marked as picked up before it can be received.",
+      );
+    }
+
+    await pool
+      .request()
+      .input("id", id)
+      .input("note", note)
+      .query(
+        `UPDATE return_requests
+       SET
+         status='PROCESSING',
+         received_at=COALESCE(received_at, SYSUTCDATETIME()),
+         admin_note=@note,
+         updated_at=SYSUTCDATETIME()
+       WHERE id=@id`,
+      );
+
+    return true;
+  }
+
+  /* -------------------------------------------------------
+   REVIEWED
+   Admin confirms that the returned item has been
+   physically inspected.
+------------------------------------------------------- */
+
+  if (normalizedStatus === "REVIEWED") {
+    if (r.currentStatus !== "PROCESSING") {
+      throw new Error("Only a processing return can be marked as reviewed.");
+    }
+
+    if (!r.receivedAt) {
+      throw new Error("The item must be received before it can be reviewed.");
+    }
+
+    await pool
+      .request()
+      .input("id", id)
+      .input("note", note)
+      .query(
+        `UPDATE return_requests
+       SET
+         status='PROCESSING',
+         reviewed_at=COALESCE(reviewed_at, SYSUTCDATETIME()),
+         admin_note=@note,
+         updated_at=SYSUTCDATETIME()
+       WHERE id=@id`,
+      );
+
+    if (requestType === "SIZE_REPLACEMENT") {
+      await createReplacementOrderForReturnRequest(id);
+    }
+
+    return true;
+  }
+
+  /* -------------------------------------------------------
+   COMPLETED
+
+   Product fault:
+     -> issue store credit for actual amount paid
+
+   Size replacement:
+     -> replacement-order logic will be added next
+
+   Legacy return:
+     -> existing Razorpay refund workflow
+------------------------------------------------------- */
+
+  if (normalizedStatus === "COMPLETED") {
+    if (r.currentStatus !== "PROCESSING") {
+      throw new Error("Only a processing return can be completed.");
+    }
+
+    if (!r.reviewedAt) {
+      throw new Error(
+        "The item must be reviewed before the return can be completed.",
       );
     }
 
     /* -----------------------------------------------------
-       Find refunds already issued for this order.
+     PRODUCT FAULT
+     Issue store credit ONLY after review.
+  ----------------------------------------------------- */
 
-       PENDING refunds are included because Razorpay may have
-       accepted the refund while processing is still pending.
-    ----------------------------------------------------- */
+    if (requestType === "PRODUCT_FAULT") {
+      if (!r.orderItemId) {
+        throw new Error("Product-fault request is missing its order item.");
+      }
 
-    const refundTotals = (
+      const paidAmount = await calculateOrderItemPaidAmount(
+        r.orderId,
+        r.orderItemId,
+      );
+
+      if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+        throw new Error("Unable to calculate the paid amount for this item.");
+      }
+
+      const credit = await addStoreCredit(
+        pool,
+        r.customerId,
+        paidAmount,
+        id,
+        r.orderId,
+        note || "Store credit for approved product fault",
+      );
+
       await pool
         .request()
-        .input("orderId", r.orderId)
-        .query<any>(
-          `
+        .input("id", id)
+        .input("approvedCredit", credit.amountInr)
+        .input("note", note)
+        .query(
+          `UPDATE return_requests
+         SET
+           status='COMPLETED',
+           approved_credit_inr=@approvedCredit,
+           admin_note=@note,
+           completed_at=SYSUTCDATETIME(),
+           updated_at=SYSUTCDATETIME()
+         WHERE id=@id`,
+        );
+
+      return true;
+    }
+
+    /* -----------------------------------------------------
+     SIZE REPLACEMENT
+
+     Replacement-order creation will be added separately.
+     Do NOT complete the request yet.
+  ----------------------------------------------------- */
+
+    if (requestType === "SIZE_REPLACEMENT") {
+      throw new Error(
+        "Replacement order must be created before this request can be completed.",
+      );
+    }
+
+    /* -----------------------------------------------------
+     LEGACY RETURN
+
+     Keep the existing Razorpay refund workflow for old
+     requests, but only after the item has been reviewed.
+  ----------------------------------------------------- */
+
+    if (!requestType) {
+      const requestedRefundAmount =
+        r.refundAmountInr == null ? 0 : Number(r.refundAmountInr);
+
+      if (
+        !Number.isFinite(requestedRefundAmount) ||
+        requestedRefundAmount <= 0
+      ) {
+        throw new Error("This legacy return has no valid refund amount.");
+      }
+
+      if (r.paymentProvider !== "RAZORPAY" || !r.paymentReference) {
+        throw new Error(
+          "This order does not have a refundable Razorpay payment.",
+        );
+      }
+
+      if (
+        !["CAPTURED", "PARTIALLY_REFUNDED"].includes(
+          String(r.paymentStatus || "").toUpperCase(),
+        )
+      ) {
+        throw new Error(
+          "This order does not have a refundable Razorpay payment.",
+        );
+      }
+
+      const refundTotals = (
+        await pool
+          .request()
+          .input("orderId", r.orderId)
+          .query<any>(
+            `
           SELECT
             CAST(
               COALESCE(
@@ -1521,211 +2118,43 @@ export async function updateReturnRequest(
           FROM payment_refunds
           WHERE order_id=@orderId
           `,
-        )
-    ).recordset[0];
+          )
+      ).recordset[0];
 
-    const alreadyRefunded = Number(refundTotals?.refundedInr ?? 0);
+      const alreadyRefunded = Number(refundTotals?.refundedInr ?? 0);
 
-    const remainingRefundAmount = Math.max(
-      0,
-      Math.round((requestedRefundAmount - alreadyRefunded) * 100) / 100,
-    );
+      const remainingRefundAmount = Math.max(
+        0,
+        Math.round((requestedRefundAmount - alreadyRefunded) * 100) / 100,
+      );
 
-    /* -----------------------------------------------------
-       If the entire requested amount was already refunded
-       manually, do NOT call Razorpay again.
+      if (remainingRefundAmount > 0) {
+        await refundPayment(
+          r.orderId,
+          remainingRefundAmount,
+          note || "Approved return",
+        );
+      }
 
-       Simply complete the return request.
-    ----------------------------------------------------- */
-
-    if (remainingRefundAmount <= 0) {
       await pool
         .request()
         .input("id", id)
-        .input("status", normalizedStatus)
         .input("note", note)
-        .input("adminId", adminId || null)
         .query(
           `UPDATE return_requests
-           SET
-             status=@status,
-             admin_note=@note,
-             admin_reviewed_at=SYSUTCDATETIME(),
-             admin_reviewed_by=@adminId,
-             updated_at=SYSUTCDATETIME()
-           WHERE id=@id`,
+         SET
+           status='COMPLETED',
+           admin_note=@note,
+           completed_at=SYSUTCDATETIME(),
+           updated_at=SYSUTCDATETIME()
+         WHERE id=@id`,
         );
 
       return true;
     }
 
-    /* -----------------------------------------------------
-       Refund ONLY the remaining amount.
-    ----------------------------------------------------- */
-
-    await refundPayment(
-      r.orderId,
-      remainingRefundAmount,
-      note || "Approved return",
-    );
-
-    /* -----------------------------------------------------
-       Mark the return request approved only after the
-       Razorpay refund succeeds.
-    ----------------------------------------------------- */
-
-    await pool
-      .request()
-      .input("id", id)
-      .input("status", normalizedStatus)
-      .input("note", note)
-      .input("adminId", adminId || null)
-      .query(
-        `UPDATE return_requests
-         SET
-           status=@status,
-           admin_note=@note,
-           admin_reviewed_at=SYSUTCDATETIME(),
-           admin_reviewed_by=@adminId,
-           updated_at=SYSUTCDATETIME()
-         WHERE id=@id`,
-      );
-
-    return true;
+    throw new Error(`Unsupported after-sales request type: ${requestType}`);
   }
-
-  /* -------------------------------------------------------
-     PRODUCT FAULT
-
-     APPROVED => STORE CREDIT
-
-     We deliberately calculate the actual paid amount
-     again at approval time rather than trusting a value
-     supplied by the browser.
-  ------------------------------------------------------- */
-
-  if (requestType === "PRODUCT_FAULT") {
-    if (!r.orderItemId) {
-      throw new Error("Product-fault request is missing its order item.");
-    }
-
-    const paidAmount = await calculateOrderItemPaidAmount(
-      r.orderId,
-      r.orderItemId,
-    );
-
-    if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
-      throw new Error("Unable to calculate the paid amount for this item.");
-    }
-
-    const credit = await addStoreCredit(
-      pool,
-      r.customerId,
-      paidAmount,
-      id,
-      r.orderId,
-      note || "Store credit for approved product fault",
-    );
-
-    await pool
-      .request()
-      .input("id", id)
-      .input("status", normalizedStatus)
-      .input("approvedCredit", credit.amountInr)
-      .input("note", note)
-      .input("adminId", adminId || null)
-      .query(
-        `UPDATE return_requests
-         SET
-           status=@status,
-           approved_credit_inr=@approvedCredit,
-           admin_note=@note,
-           admin_reviewed_at=SYSUTCDATETIME(),
-           admin_reviewed_by=@adminId,
-           updated_at=SYSUTCDATETIME()
-         WHERE id=@id`,
-      );
-
-    return true;
-  }
-
-  /* -------------------------------------------------------
-     SIZE REPLACEMENT
-
-     APPROVED => replacement request approved.
-
-     The replacement variant was validated when the
-     customer submitted the request.
-  ------------------------------------------------------- */
-
-  if (requestType === "SIZE_REPLACEMENT") {
-    if (!r.orderItemId) {
-      throw new Error("Size-replacement request is missing its order item.");
-    }
-
-    if (!r.replacementVariantId) {
-      throw new Error(
-        "Size-replacement request is missing its replacement variant.",
-      );
-    }
-
-    const replacement = (
-      await pool
-        .request()
-        .input("variantId", r.replacementVariantId)
-        .query<any>(
-          `SELECT TOP 1
-            v.id,
-            v.product_id productId,
-            v.sku,
-            CAST(
-              COALESCE(
-                i.quantity_available - i.quantity_reserved,
-                0
-              )
-              AS int
-            ) availableQuantity
-
-          FROM product_variants v
-
-          LEFT JOIN inventory i
-            ON i.variant_id=v.id
-
-          WHERE v.id=@variantId`,
-        )
-    ).recordset[0];
-
-    if (!replacement) {
-      throw new Error("Replacement variant no longer exists.");
-    }
-
-    if (Number(replacement.availableQuantity ?? 0) <= 0) {
-      throw new Error(
-        "The requested replacement size is currently out of stock.",
-      );
-    }
-
-    await pool
-      .request()
-      .input("id", id)
-      .input("status", normalizedStatus)
-      .input("note", note)
-      .input("adminId", adminId || null)
-      .query(
-        `UPDATE return_requests
-         SET
-           status=@status,
-           admin_note=@note,
-           admin_reviewed_at=SYSUTCDATETIME(),
-           admin_reviewed_by=@adminId,
-           updated_at=SYSUTCDATETIME()
-         WHERE id=@id`,
-      );
-
-    return true;
-  }
-
-  throw new Error(`Unsupported after-sales request type: ${requestType}`);
 }
 
 /* =========================================================

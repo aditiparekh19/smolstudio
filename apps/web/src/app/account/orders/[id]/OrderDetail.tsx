@@ -544,7 +544,42 @@ export default function OrderDetail({ id }: { id: string }) {
                       </div>
                     )}
 
-                    {o.status === "DELIVERED" &&
+                    {existingRequest?.requestType === "SIZE_REPLACEMENT" &&
+                      existingRequest.replacementOrderId && (
+                        <div className="mt-4 rounded-2xl border border-[#eadfd5] bg-[#fffaf4] p-4">
+                          <p className="text-sm font-medium text-[#5e473c]">
+                            Replacement order created
+                          </p>
+
+                          <p className="mt-1 text-xs leading-5 text-[#8b7a70]">
+                            Your replacement order has been created and is being
+                            processed.
+                          </p>
+
+                          <Link
+                            href={`/account/orders/${existingRequest.replacementOrderId}`}
+                            className="mt-3 inline-flex rounded-full bg-[#5e473c] px-4 py-2 text-xs text-white transition hover:bg-[#46352d]"
+                          >
+                            View replacement order →
+                          </Link>
+                        </div>
+                      )}
+
+                    {existingRequest?.status === "REJECTED" ? (
+                      <p className="mt-3 text-xs leading-5 text-[#8b7a70]">
+                        {existingRequest.requestType === "SIZE_REPLACEMENT"
+                          ? "Your replacement request has been rejected. If you have any questions or need further assistance, please contact "
+                          : "Your product-fault return request has been rejected. If you have any questions or need further assistance, please contact "}
+                        <Link
+                          href="/contact"
+                          className="font-medium text-[#5e473c] underline underline-offset-2 hover:text-[#46352d]"
+                        >
+                          Customer Care
+                        </Link>
+                        .
+                      </p>
+                    ) : (
+                      o.status === "DELIVERED" &&
                       !hasActiveRequest &&
                       !isRequesting && (
                         <div className="mt-4 flex flex-wrap gap-2">
@@ -568,7 +603,8 @@ export default function OrderDetail({ id }: { id: string }) {
                             Size replacement
                           </button>
                         </div>
-                      )}
+                      )
+                    )}
 
                     {isRequesting && (
                       <div className="mt-4 rounded-2xl border border-[#eadfd5] bg-[#fffaf4] p-5">

@@ -239,6 +239,7 @@ export default function AdminPage() {
               title="Orders"
               description="Review orders, payments, fulfilment and tracking details."
               icon="↗"
+              notificationCount={s?.pendingOrderCount ?? 0}
             />
 
             <AdminActionCard
@@ -264,9 +265,10 @@ export default function AdminPage() {
 
             <AdminActionCard
               href="/admin/returns"
-              title="Returns"
-              description="Review return requests and manage after-sales activity."
+              title="Returns & Replacements"
+              description="Review product faults, returns and size replacement requests."
               icon="↩︎"
+              notificationCount={s?.returnRequestCount ?? 0}
             />
 
             <AdminActionCard
@@ -337,11 +339,13 @@ function AdminActionCard({
   title,
   description,
   icon,
+  notificationCount = 0,
 }: {
   href: string;
   title: string;
   description: string;
   icon: string;
+  notificationCount?: number;
 }) {
   return (
     <Link
@@ -349,12 +353,20 @@ function AdminActionCard({
       className="group rounded-[1.75rem] border border-[#eadfd5] bg-[#fffaf4] p-6 transition duration-200 hover:-translate-y-1 hover:border-[#d9c8bb] hover:bg-white hover:shadow-[0_12px_35px_rgba(94,71,60,0.07)]"
     >
       <div className="flex items-start justify-between gap-4">
-        <div
-          className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f0e4d8] text-lg ${
-            icon === "↩" ? "text-[#252321]" : "text-[#5e473c]"
-          }`}
-        >
-          {icon}
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f0e4d8] text-lg ${
+              icon === "↩" ? "text-[#252321]" : "text-[#5e473c]"
+            }`}
+          >
+            {icon}
+          </div>
+
+          {notificationCount > 0 && (
+            <span className="rounded-full bg-[#5e473c] px-2.5 py-1 text-[11px] font-semibold text-white">
+              {notificationCount} new
+            </span>
+          )}
         </div>
 
         <span className="text-lg text-[#b09d91] transition-transform duration-200 group-hover:translate-x-1 group-hover:text-[#5e473c]">

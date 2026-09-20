@@ -80,8 +80,7 @@ export default function CheckoutPage() {
     [address],
   );
 
-  useEffect(() => {
-  }, [user, items.length, coupon, appliedCoupon, totals]);
+  useEffect(() => {}, [user, items.length, coupon, appliedCoupon, totals]);
 
   /*
    * Load Razorpay.
@@ -116,8 +115,7 @@ export default function CheckoutPage() {
           setAddress(r.myAddresses[0]);
         }
       })
-      .catch((err) => {
-      });
+      .catch((err) => {});
   }, [user]);
 
   /*
@@ -133,18 +131,25 @@ export default function CheckoutPage() {
         couponCode: appliedCoupon || undefined,
       };
 
-
       void apiClient()
         .request<any>(checkoutTotalsQuery, variables)
         .then((r) => {
-
           setTotals(r.checkoutTotals);
 
           setCouponError("");
           setError("");
+
+          if (
+            appliedCoupon &&
+            Number(r.checkoutTotals?.discountInr ?? 0) <= 0
+          ) {
+            setAppliedCoupon("");
+            setCouponError(
+              "This coupon could not be applied to your current order.",
+            );
+          }
         })
         .catch((err: any) => {
-
           const graphqlMessage =
             err?.response?.errors?.[0]?.message ||
             err?.response?.data?.errors?.[0]?.message ||
@@ -235,14 +240,12 @@ export default function CheckoutPage() {
         couponCode: appliedCoupon || null,
       };
 
-
       const r = await apiClient().request<any>(
         createPaymentOrderMutation,
         paymentVariables,
       );
 
       const paymentOrder = r.createPaymentOrder;
-
 
       if (!paymentOrder?.orderId) {
         throw new Error("The server did not return a valid order ID.");
@@ -264,7 +267,6 @@ export default function CheckoutPage() {
         Number(paymentOrder.amount) <= 0 ||
         Number(paymentOrder.payableInr) <= 0
       ) {
-
         setMessage("Your order has been placed using store credit.");
 
         await refreshCart();
@@ -320,7 +322,6 @@ export default function CheckoutPage() {
 
             const orderId = paymentOrder.orderId;
 
-
             await apiClient().request<any>(verifyPaymentMutation, {
               orderId,
               razorpayOrderId: response.razorpay_order_id,
@@ -338,7 +339,6 @@ export default function CheckoutPage() {
 
             router.push(`/account/orders/${orderId}`);
           } catch (err: any) {
-
             const graphqlMessage =
               err?.response?.errors?.[0]?.message ||
               err?.message ||
@@ -359,7 +359,6 @@ export default function CheckoutPage() {
       const checkout = new window.Razorpay(options);
 
       checkout.on("payment.failed", (response: any) => {
-
         setError(
           response?.error?.description || "Payment failed. You can try again.",
         );
@@ -369,7 +368,6 @@ export default function CheckoutPage() {
 
       checkout.open();
     } catch (err: any) {
-
       const graphqlMessage =
         err?.response?.errors?.[0]?.message ||
         err?.message ||
@@ -587,6 +585,12 @@ export default function CheckoutPage() {
                 onClick={() => {
                   const normalizedCoupon = coupon.trim().toUpperCase();
 
+                  if (!normalizedCoupon) {
+                    setCouponError("Please enter a coupon code.");
+                    setAppliedCoupon("");
+                    return;
+                  }
+
                   setCouponError("");
                   setError("");
                   setAppliedCoupon(normalizedCoupon);
@@ -599,11 +603,13 @@ export default function CheckoutPage() {
             {couponError && (
               <p className="mt-2 text-sm text-red-600">{couponError}</p>
             )}
-            {appliedCoupon && !couponError && (
-              <p className="mt-2 text-xs text-[#6d5a50]">
-                Applied: <span className="font-medium">{appliedCoupon}</span>
-              </p>
-            )}
+            {appliedCoupon &&
+              !couponError &&
+              Number(totals?.discountInr ?? 0) > 0 && (
+                <p className="mt-2 text-xs text-[#6d5a50]">
+                  Applied: <span className="font-medium">{appliedCoupon}</span>
+                </p>
+              )}
           </label>
 
           {totals && (

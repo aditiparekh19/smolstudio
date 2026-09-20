@@ -279,6 +279,12 @@ export const myReturnsQuery = gql`
       adminNote
       adminReviewedAt
       adminReviewedBy
+      processingAt
+      pickedUpAt
+      receivedAt
+      reviewedAt
+      completedAt
+      pickupTrackingNumber
       replacementFulfilledAt
       createdAt
       updatedAt
@@ -606,15 +612,37 @@ export const adminReturnsQuery = gql`
       adminReviewedAt
       adminReviewedBy
       replacementFulfilledAt
+      images {
+        id
+        filename
+        contentType
+        url
+      }
       createdAt
       updatedAt
+      processingAt
+      pickedUpAt
+      receivedAt
+      reviewedAt
+      completedAt
+      pickupTrackingNumber
     }
   }
 `;
 
 export const updateReturnRequestMutation = gql`
-  mutation UpdateReturn($id: ID!, $status: String!, $adminNote: String) {
-    updateReturnRequest(id: $id, status: $status, adminNote: $adminNote)
+  mutation UpdateReturn(
+    $id: ID!
+    $status: String!
+    $adminNote: String
+    $pickupTrackingNumber: String
+  ) {
+    updateReturnRequest(
+      id: $id
+      status: $status
+      adminNote: $adminNote
+      pickupTrackingNumber: $pickupTrackingNumber
+    )
   }
 `;
 

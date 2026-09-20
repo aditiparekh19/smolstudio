@@ -394,6 +394,14 @@ export const typeDefs = /* GraphQL */ `
     isActive: Boolean!
   }
 
+  type ReturnRequestImage {
+    id: ID!
+    filename: String!
+    contentType: String!
+    url: String!
+    images: [ReturnRequestImage!]!
+  }
+
   type ReturnRequest {
     id: ID!
     orderId: ID!
@@ -419,8 +427,17 @@ export const typeDefs = /* GraphQL */ `
     adminReviewedBy: ID
     replacementFulfilledAt: String
 
+    images: [ReturnRequestImage!]!
+
     createdAt: String!
     updatedAt: String!
+
+    processingAt: String
+    pickedUpAt: String
+    receivedAt: String
+    reviewedAt: String
+    completedAt: String
+    pickupTrackingNumber: String
   }
 
   type AfterSalesRequest {
@@ -687,7 +704,12 @@ export const typeDefs = /* GraphQL */ `
 
     deleteCoupon(id: ID!): Boolean!
 
-    updateReturnRequest(id: ID!, status: String!, adminNote: String): Boolean!
+    updateReturnRequest(
+      id: ID!
+      status: String!
+      adminNote: String
+      pickupTrackingNumber: String
+    ): Boolean!
 
     addToWishlist(productId: ID!): [WishlistItem!]!
 
@@ -1200,6 +1222,8 @@ export const schema = createSchema<GraphQLContext>({
             args.id,
             args.status,
             args.adminNote,
+            ctx.user?.id ?? null,
+            args.pickupTrackingNumber,
           );
         } catch (e) {
           return safeError(e);
