@@ -485,6 +485,17 @@ export const adminStatsQuery = gql`
   }
 `;
 
+export const adminCashFlowQuery = gql `
+  query AdminCashFlow {
+    adminCashFlow {
+      incomeInr
+      refundInr
+      storeCreditInr
+      netCashFlowInr
+    }
+  }
+`;
+
 export const adminCategoriesQuery = gql`
   query AdminCategories {
     adminCategories {
@@ -661,6 +672,18 @@ export const myStoreCreditQuery = gql`
         description
         createdAt
       }
+    }
+  }
+`;
+
+export const adminCashFlowHistoryQuery = gql`
+  query AdminCashFlowHistory {
+    adminCashFlowHistory {
+      date
+      incomeInr
+      refundInr
+      storeCreditInr
+      netCashFlowInr
     }
   }
 `;

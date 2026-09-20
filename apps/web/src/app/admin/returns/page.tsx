@@ -73,7 +73,7 @@ export default function Returns() {
                     {r.customerEmail} · ₹{r.refundAmountInr}
                   </p>
                 </div>
-                <span className="rounded-full bg-[#f3ebe4] px-3 py-1 text-xs font-medium text-[#5e473c]">
+                <span className="inline-flex items-center whitespace-nowrap rounded-full bg-[#f3ebe4] px-3.5 py-1.5 text-xs font-medium leading-none text-[#5e473c]">
                   {r.status === "REQUESTED"
                     ? "Requested"
                     : r.status === "COMPLETED"

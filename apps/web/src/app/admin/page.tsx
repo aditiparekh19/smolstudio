@@ -5,7 +5,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../components/AuthProvider";
 import { apiClient } from "../../lib/graphql";
-import { adminStatsQuery } from "../../lib/orders";
+import {
+  adminCashFlowHistoryQuery,
+  adminCashFlowQuery,
+  adminStatsQuery,
+} from "../../lib/orders";
 
 type Stats = {
   productCount: number;
@@ -18,11 +22,38 @@ type Stats = {
   outOfStockCount: number;
 };
 
+type CashFlow = {
+  incomeInr: number;
+  refundInr: number;
+  storeCreditInr: number;
+  netCashFlowInr: number;
+};
+
+type CashFlowHistoryRow = {
+  date: string;
+  incomeInr: number;
+  refundInr: number;
+  storeCreditInr: number;
+  netCashFlowInr: number;
+};
+
+type MonthlyCashFlow = {
+  month: string;
+  incomeInr: number;
+  refundInr: number;
+  storeCreditInr: number;
+  netCashFlowInr: number;
+};
+
 export default function AdminPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
 
   const [s, setS] = useState<Stats | null>(null);
+  const [cashFlow, setCashFlow] = useState<CashFlow | null>(null);
+  const [cashFlowHistory, setCashFlowHistory] = useState<CashFlowHistoryRow[]>(
+    [],
+  );
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -34,6 +65,28 @@ export default function AdminPage() {
         .catch((e) =>
           setError(
             e instanceof Error ? e.message : "Unable to load dashboard.",
+          ),
+        );
+
+      void apiClient()
+        .request<{ adminCashFlow: CashFlow }>(adminCashFlowQuery)
+        .then((r) => setCashFlow(r.adminCashFlow))
+        .catch((e) =>
+          setError(
+            e instanceof Error ? e.message : "Unable to load cash-flow data.",
+          ),
+        );
+
+      void apiClient()
+        .request<{
+          adminCashFlowHistory: CashFlowHistoryRow[];
+        }>(adminCashFlowHistoryQuery)
+        .then((r) => setCashFlowHistory(r.adminCashFlowHistory))
+        .catch((e) =>
+          setError(
+            e instanceof Error
+              ? e.message
+              : "Unable to load cash-flow history.",
           ),
         );
     }
@@ -208,6 +261,50 @@ export default function AdminPage() {
               detail="Products unavailable"
             />
           </div>
+
+          {/* Cash flow */}
+          <div className="mt-10">
+            <div className="mb-6">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#9a877c]">
+                Cash flow
+              </p>
+
+              <h2 className="mt-2 font-serif text-3xl tracking-[-0.02em] text-[#5e473c]">
+                Revenue & money out
+              </h2>
+
+              <p className="mt-2 max-w-xl text-sm leading-6 text-[#8b7a70]">
+                Track customer payments, actual refunds, store credit issued and
+                the resulting net cash flow.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <CashFlowMetric
+                label="Captured payments"
+                value={cashFlow?.incomeInr ?? 0}
+                detail="Successful Razorpay payments"
+              />
+
+              <CashFlowMetric
+                label="Actual refunds"
+                value={cashFlow?.refundInr ?? null}
+                detail="Money refunded to customers"
+              />
+
+              <CashFlowMetric
+                label="Store credit"
+                value={cashFlow?.storeCreditInr ?? null}
+                detail="Credit issued for product faults"
+              />
+
+              <CashFlowMetric
+                label="Net cash flow"
+                value={cashFlow?.netCashFlowInr ?? null}
+                detail="Income minus refunds and credit"
+              />
+            </div>
+          </div>
         </section>
 
         {/* Manage store */}
@@ -240,6 +337,13 @@ export default function AdminPage() {
               description="Review orders, payments, fulfilment and tracking details."
               icon="↗"
               notificationCount={s?.pendingOrderCount ?? 0}
+            />
+
+            <AdminActionCard
+              href="/admin/cash-flow"
+              title="Cash Flow"
+              description="View revenue history, actual refunds, store credit and net cash flow."
+              icon="₹"
             />
 
             <AdminActionCard
@@ -384,5 +488,32 @@ function AdminActionCard({
         Manage
       </p>
     </Link>
+  );
+}
+
+function CashFlowMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number | null;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-[#eadfd5] bg-[#fffaf4] p-5">
+      <p className="text-sm font-medium text-[#8b7a70]">{label}</p>
+
+      <p className="mt-3 font-serif text-3xl tracking-[-0.03em] text-[#5e473c]">
+        {value === null
+          ? "-"
+          : `₹${Number(value).toLocaleString("en-IN", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`}
+      </p>
+
+      <p className="mt-1 text-sm text-[#9a877c]">{detail}</p>
+    </div>
   );
 }

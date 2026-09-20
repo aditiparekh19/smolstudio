@@ -336,11 +336,11 @@ export async function updateAdminOrder(input: {
   const pool = await getDb();
 
   const current = (
-  await pool
-    .request()
-    .input("id", input.id)
-    .query<any>(
-      `
+    await pool
+      .request()
+      .input("id", input.id)
+      .query<any>(
+        `
       SELECT TOP 1
         status,
         payment_status paymentStatus,
@@ -348,8 +348,8 @@ export async function updateAdminOrder(input: {
       FROM orders
       WHERE id=@id
       `,
-    )
-).recordset[0];
+      )
+  ).recordset[0];
 
   if (!current) {
     throw new Error("Order not found.");
@@ -2291,4 +2291,128 @@ export async function deleteAddress(customerId: string, id: string) {
     );
 
   return listAddresses(customerId);
+}
+
+export async function getAdminCashFlow() {
+  const pool = await getDb();
+
+  const incomeResult = await pool.request().query<any>(`
+    SELECT
+      COALESCE(
+        SUM(
+          CASE
+            WHEN payment_status = 'CAPTURED'
+             AND payment_provider = 'RAZORPAY'
+            THEN total_inr
+            ELSE 0
+          END
+        ),
+        0
+      ) AS incomeInr
+    FROM orders
+  `);
+
+  const refundResult = await pool.request().query<any>(`
+    SELECT
+      COALESCE(
+        SUM(
+          CASE
+            WHEN status IN ('PROCESSED', 'SUCCESS', 'COMPLETED')
+            THEN amount_inr
+            ELSE 0
+          END
+        ),
+        0
+      ) AS refundInr
+    FROM payment_refunds
+  `);
+
+  const storeCreditResult = await pool.request().query<any>(`
+    SELECT
+      COALESCE(
+        SUM(approved_credit_inr),
+        0
+      ) AS storeCreditInr
+    FROM return_requests
+    WHERE request_type = 'PRODUCT_FAULT'
+      AND status = 'COMPLETED'
+      AND approved_credit_inr > 0
+  `);
+
+  const incomeInr = Number(incomeResult.recordset[0]?.incomeInr ?? 0);
+
+  const refundInr = Number(refundResult.recordset[0]?.refundInr ?? 0);
+
+  const storeCreditInr = Number(
+    storeCreditResult.recordset[0]?.storeCreditInr ?? 0,
+  );
+
+  return {
+    incomeInr,
+    refundInr,
+    storeCreditInr,
+    netCashFlowInr: incomeInr - refundInr - storeCreditInr,
+  };
+}
+
+export async function getAdminCashFlowHistory() {
+  const pool = await getDb();
+
+  const result = await pool.request().query<any>(`
+    SELECT
+      flow_date AS date,
+      SUM(income_inr) AS incomeInr,
+      SUM(refund_inr) AS refundInr,
+      SUM(store_credit_inr) AS storeCreditInr,
+      SUM(income_inr) -
+        SUM(refund_inr) -
+        SUM(store_credit_inr) AS netCashFlowInr
+    FROM (
+    SELECT
+        CONVERT(varchar(10), o.created_at, 23) AS flow_date,
+        SUM(o.total_inr) AS income_inr,
+        CAST(0 AS DECIMAL(12,2)) AS refund_inr,
+        CAST(0 AS DECIMAL(12,2)) AS store_credit_inr
+      FROM orders o
+      WHERE o.payment_status = 'CAPTURED'
+        AND o.payment_provider = 'RAZORPAY'
+      GROUP BY CONVERT(varchar(10), o.created_at, 23)
+
+      UNION ALL
+      
+      SELECT
+        CONVERT(varchar(10), pr.processed_at, 23) AS flow_date,
+        CAST(0 AS DECIMAL(12,2)) AS income_inr,
+        SUM(pr.amount_inr) AS refund_inr,
+        CAST(0 AS DECIMAL(12,2)) AS store_credit_inr
+      FROM payment_refunds pr
+      WHERE pr.status IN ('PROCESSED', 'SUCCESS', 'COMPLETED')
+        AND pr.processed_at IS NOT NULL
+      GROUP BY CONVERT(varchar(10), pr.processed_at, 23)
+
+      UNION ALL
+
+      SELECT
+        CONVERT(varchar(10), rr.completed_at, 23) AS flow_date,
+        CAST(0 AS DECIMAL(12,2)) AS income_inr,
+        CAST(0 AS DECIMAL(12,2)) AS refund_inr,
+        SUM(rr.approved_credit_inr) AS store_credit_inr
+      FROM return_requests rr
+      WHERE rr.request_type = 'PRODUCT_FAULT'
+        AND rr.status = 'COMPLETED'
+        AND rr.approved_credit_inr > 0
+        AND rr.completed_at IS NOT NULL
+      GROUP BY CONVERT(varchar(10), rr.completed_at, 23)
+    ) cash_flow
+    GROUP BY flow_date
+    ORDER BY flow_date DESC;
+  `);
+
+  return result.recordset.map((row) => ({
+    date: row.date,
+    incomeInr: Number(row.incomeInr ?? 0),
+    refundInr: Number(row.refundInr ?? 0),
+    storeCreditInr: Number(row.storeCreditInr ?? 0),
+    netCashFlowInr: Number(row.netCashFlowInr ?? 0),
+  }));
 }

@@ -51,6 +51,8 @@ import {
   deleteAddress,
   deleteCategory,
   deleteCoupon,
+  getAdminCashFlow,
+  getAdminCashFlowHistory,
   getAdminCustomer,
   getAdminOrder,
   listAddresses,
@@ -380,6 +382,21 @@ export const typeDefs = /* GraphQL */ `
     outOfStockCount: Int!
   }
 
+  type AdminCashFlow {
+    incomeInr: Float!
+    refundInr: Float!
+    storeCreditInr: Float!
+    netCashFlowInr: Float!
+  }
+
+  type AdminCashFlowHistory {
+    date: String!
+    incomeInr: Float!
+    refundInr: Float!
+    storeCreditInr: Float!
+    netCashFlowInr: Float!
+  }
+
   type Coupon {
     id: ID!
     code: String!
@@ -544,6 +561,10 @@ export const typeDefs = /* GraphQL */ `
     adminCustomer(id: ID!): AdminCustomer
 
     adminStats: AdminStats!
+
+    adminCashFlow: AdminCashFlow!
+
+    adminCashFlowHistory: [AdminCashFlowHistory!]!
 
     checkoutTotals(couponCode: String): CheckoutTotals!
 
@@ -801,6 +822,18 @@ export const schema = createSchema<GraphQLContext>({
       adminStats: async (_: unknown, __: unknown, ctx) => {
         requireAdmin(ctx.user);
         return adminDashboardStats();
+      },
+
+      adminCashFlow: async (_, __, ctx) => {
+        requireAdmin(ctx.user);
+
+        return getAdminCashFlow();
+      },
+
+      adminCashFlowHistory: async (_, __, ctx) => {
+        requireAdmin(ctx.user);
+
+        return getAdminCashFlowHistory();
       },
 
       checkoutTotals: async (_: unknown, args: any, ctx) => {
