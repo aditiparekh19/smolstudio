@@ -68,7 +68,7 @@ export async function listAdminProducts(search?: string, active?: boolean) {
         ORDER BY pi.is_primary DESC, pi.sort_order ASC
       ) AS imageUrl,
 
-      COALESCE(
+            COALESCE(
         (
           SELECT SUM(i.quantity_available - i.quantity_reserved)
           FROM inventory i
@@ -76,7 +76,44 @@ export async function listAdminProducts(search?: string, active?: boolean) {
           WHERE v.product_id = p.id
         ),
         0
-      ) AS stock
+      ) AS stock,
+
+      /* Published 4-5 star reviews */
+      (
+      SELECT COUNT(*)
+      FROM product_reviews pr
+      WHERE pr.product_id = p.id
+        AND pr.is_published = 1
+        AND pr.rating >= 4
+      ) AS likedCount,
+
+      (
+        SELECT COUNT(DISTINCT wi.customer_id)
+        FROM wishlist_items wi
+        WHERE wi.product_id = p.id
+      ) AS wishlistCount,
+
+      (
+        SELECT COUNT(*)
+        FROM return_requests rr
+        INNER JOIN order_items oi
+          ON oi.id = rr.order_item_id
+        INNER JOIN product_variants rv
+          ON rv.id = oi.variant_id
+        WHERE rv.product_id = p.id
+          AND rr.request_type = 'SIZE_REPLACEMENT'
+      ) AS sizeReplacementCount,
+
+      (
+        SELECT COUNT(*)
+        FROM return_requests rr
+        INNER JOIN order_items oi
+          ON oi.id = rr.order_item_id
+        INNER JOIN product_variants rv
+          ON rv.id = oi.variant_id
+        WHERE rv.product_id = p.id
+          AND rr.request_type = 'PRODUCT_FAULT'
+      ) AS complaintCount
 
     FROM products p
     INNER JOIN categories c ON c.id = p.category_id
@@ -190,9 +227,79 @@ export async function getAdminProduct(id: string) {
   }
   const pool = await getDb();
   const product = await pool.request().input("id", id).query(`
-    SELECT TOP 1 p.id,p.slug,p.name,p.description,p.price_inr priceInr,p.compare_at_price_inr compareAtPriceInr,p.sku,p.is_active isActive,
-      c.id categoryId,c.slug categorySlug,c.name categoryName
-    FROM products p INNER JOIN categories c ON c.id=p.category_id WHERE p.id=@id;`);
+    SELECT TOP 1
+      p.id,
+      p.slug,
+      p.name,
+      p.description,
+      p.price_inr AS priceInr,
+      p.compare_at_price_inr AS compareAtPriceInr,
+      p.sku,
+      p.is_active AS isActive,
+
+      c.id AS categoryId,
+      c.slug AS categorySlug,
+      c.name AS categoryName,
+
+      (
+        SELECT TOP 1 pi.url
+        FROM product_images pi
+        WHERE pi.product_id = p.id
+        ORDER BY pi.is_primary DESC, pi.sort_order ASC
+      ) AS imageUrl,
+
+      COALESCE(
+        (
+          SELECT SUM(i.quantity_available - i.quantity_reserved)
+          FROM inventory i
+          INNER JOIN product_variants v
+            ON v.id = i.variant_id
+          WHERE v.product_id = p.id
+        ),
+        0
+      ) AS stock,
+
+      (
+        SELECT COUNT(*)
+        FROM product_reviews pr
+        WHERE pr.product_id = p.id
+          AND pr.is_published = 1
+          AND pr.rating >= 4
+      ) AS likedCount,
+
+      (
+        SELECT COUNT(DISTINCT wi.customer_id)
+        FROM wishlist_items wi
+        WHERE wi.product_id = p.id
+      ) AS wishlistCount,
+
+      (
+        SELECT COUNT(*)
+        FROM return_requests rr
+        INNER JOIN order_items oi
+          ON oi.id = rr.order_item_id
+        INNER JOIN product_variants rv
+          ON rv.id = oi.variant_id
+        WHERE rv.product_id = p.id
+          AND rr.request_type = 'SIZE_REPLACEMENT'
+      ) AS sizeReplacementCount,
+
+      (
+        SELECT COUNT(*)
+        FROM return_requests rr
+        INNER JOIN order_items oi
+          ON oi.id = rr.order_item_id
+        INNER JOIN product_variants rv
+          ON rv.id = oi.variant_id
+        WHERE rv.product_id = p.id
+          AND rr.request_type = 'PRODUCT_FAULT'
+      ) AS complaintCount
+
+    FROM products p
+    INNER JOIN categories c
+      ON c.id = p.category_id
+    WHERE p.id = @id;
+  `);
   const row = product.recordset[0];
   if (!row) return null;
   const images = await pool

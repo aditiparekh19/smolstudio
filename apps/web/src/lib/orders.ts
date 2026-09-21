@@ -420,6 +420,7 @@ export const adminCustomersQuery = gql`
       createdAt
       orderCount
       totalSpentInr
+      returnCount
       addresses {
         id
         label
@@ -485,7 +486,7 @@ export const adminStatsQuery = gql`
   }
 `;
 
-export const adminCashFlowQuery = gql `
+export const adminCashFlowQuery = gql`
   query AdminCashFlow {
     adminCashFlow {
       incomeInr

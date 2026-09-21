@@ -152,6 +152,12 @@ export const typeDefs = /* GraphQL */ `
     categoryName: String!
     imageUrl: String
     stock: Int
+
+    likedCount: Int!
+    wishlistCount: Int!
+    sizeReplacementCount: Int!
+    complaintCount: Int!
+
     images: [ProductImage!]!
     variants: [AdminVariant!]!
   }
@@ -367,6 +373,7 @@ export const typeDefs = /* GraphQL */ `
     createdAt: String!
     orderCount: Int
     totalSpentInr: Float
+    returnCount: Int!
     orders: [CustomerOrderSummary!]!
     addresses: [Address!]!
   }

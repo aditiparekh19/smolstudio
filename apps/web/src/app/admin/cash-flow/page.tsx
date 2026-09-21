@@ -93,11 +93,8 @@ export default function AdminCashFlowPage() {
     <main className="min-h-screen bg-[#fcf8f3] px-5 py-10 lg:px-8 lg:py-14">
       <div className="mx-auto max-w-7xl">
         <header className="border-b border-[#eadfd5] pb-8">
-          <Link
-            href="/admin"
-            className="text-sm text-[#8b7a70] transition hover:text-[#5e473c]"
-          >
-            ← Back to dashboard
+          <Link href="/admin" className="text-sm text-[#8b7a70]">
+            ← Back office
           </Link>
 
           <p className="mt-8 text-xs uppercase tracking-[0.2em] text-[#9a877c]">

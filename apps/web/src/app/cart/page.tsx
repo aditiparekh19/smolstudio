@@ -9,6 +9,9 @@ export default function CartPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-5 py-14 lg:px-8">
+      <Link href="/account" className="text-sm text-[#8b7a70]">
+        ← Account
+      </Link>
       <p className="text-xs uppercase tracking-[0.2em] text-[#8b7a70]">
         Your bag
       </p>

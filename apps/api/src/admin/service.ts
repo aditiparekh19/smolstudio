@@ -597,6 +597,14 @@ export async function listAdminCustomers(search?: string) {
         c.role,
         c.created_at createdAt,
 
+        (
+          SELECT COUNT(*)
+          FROM return_requests rr
+          WHERE rr.customer_id = c.id
+            AND rr.status = 'COMPLETED'
+            AND ISNULL(rr.request_type, '') <> 'SIZE_REPLACEMENT'
+        ) AS returnCount,
+
         COUNT(o.id) orderCount,
 
         CAST(
@@ -665,6 +673,8 @@ export async function listAdminCustomers(search?: string) {
         createdAt: new Date(customer.createdAt).toISOString(),
 
         orderCount: Number(customer.orderCount ?? 0),
+
+        returnCount: Number(customer.returnCount ?? 0),
 
         totalSpentInr: Number(customer.totalSpentInr ?? 0),
 

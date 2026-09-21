@@ -2,8 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "../../../components/AuthProvider";
-import { apiClient, adminReviewsQuery, deleteAdminReviewMutation } from "../../../lib/graphql";
+import {
+  apiClient,
+  adminReviewsQuery,
+  deleteAdminReviewMutation,
+} from "../../../lib/graphql";
 import type { AdminReview } from "../../../lib/types";
+import Link from "next/link";
 
 export default function AdminReviewsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -23,11 +28,7 @@ export default function AdminReviewsPage() {
 
       setReviews(result.adminReviews);
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Unable to load reviews.",
-      );
+      setError(e instanceof Error ? e.message : "Unable to load reviews.");
     } finally {
       setLoading(false);
     }
@@ -49,40 +50,24 @@ export default function AdminReviewsPage() {
     }
 
     try {
-      await apiClient().request(
-        deleteAdminReviewMutation,
-        { id },
-      );
+      await apiClient().request(deleteAdminReviewMutation, { id });
 
-      setReviews((current) =>
-        current.filter((review) => review.id !== id),
-      );
+      setReviews((current) => current.filter((review) => review.id !== id));
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Unable to delete review.",
-      );
+      setError(e instanceof Error ? e.message : "Unable to delete review.");
     }
   }
 
   if (authLoading) {
     return (
-      <main className="mx-auto max-w-7xl px-5 py-16">
-        Loading reviews...
-      </main>
+      <main className="mx-auto max-w-7xl px-5 py-16">Loading reviews...</main>
     );
   }
 
-  if (
-    !user ||
-    (user.role !== "ADMIN" && user.role !== "STAFF")
-  ) {
+  if (!user || (user.role !== "ADMIN" && user.role !== "STAFF")) {
     return (
       <main className="mx-auto max-w-7xl px-5 py-16">
-        <h1 className="font-serif text-5xl text-[#5e473c]">
-          Reviews
-        </h1>
+        <h1 className="font-serif text-5xl text-[#5e473c]">Reviews</h1>
         <p className="mt-4 text-[#8b7a70]">
           You need an admin account to access this area.
         </p>
@@ -93,13 +78,11 @@ export default function AdminReviewsPage() {
   return (
     <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
       <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-[#8b7a70]">
-          Back office
-        </p>
+        <Link href="/admin" className="text-sm text-[#8b7a70]">
+          ← Back office
+        </Link>
 
-        <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">
-          Reviews
-        </h1>
+        <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Reviews</h1>
 
         <p className="mt-3 text-sm text-[#75645b]">
           Manage customer reviews across the store.
@@ -113,14 +96,10 @@ export default function AdminReviewsPage() {
       )}
 
       {loading ? (
-        <p className="mt-10 text-[#8b7a70]">
-          Loading reviews...
-        </p>
+        <p className="mt-10 text-[#8b7a70]">Loading reviews...</p>
       ) : reviews.length === 0 ? (
         <div className="mt-10 rounded-4xl border border-[#eadfd5] bg-[#fffaf4] p-8">
-          <p className="font-serif text-2xl text-[#5e473c]">
-            No reviews yet
-          </p>
+          <p className="font-serif text-2xl text-[#5e473c]">No reviews yet</p>
         </div>
       ) : (
         <div className="mt-8 space-y-5">
@@ -163,23 +142,15 @@ export default function AdminReviewsPage() {
               )}
 
               <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[#8b7a70]">
-                <span>
-                  {review.customerName || "Customer"}
-                </span>
+                <span>{review.customerName || "Customer"}</span>
 
                 <span>{review.customerEmail}</span>
 
                 <span>
-                  {new Date(
-                    review.createdAt,
-                  ).toLocaleDateString("en-IN")}
+                  {new Date(review.createdAt).toLocaleDateString("en-IN")}
                 </span>
 
-                <span>
-                  {review.isPublished
-                    ? "Published"
-                    : "Hidden"}
-                </span>
+                <span>{review.isPublished ? "Published" : "Hidden"}</span>
               </div>
             </article>
           ))}

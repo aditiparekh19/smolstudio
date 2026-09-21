@@ -1,7 +1,7 @@
-import { gql } from 'graphql-request';
+import { gql } from "graphql-request";
 
 const adminFields = `
-  id slug name description priceInr compareAtPriceInr sku isActive categoryId categorySlug categoryName imageUrl stock
+  id slug name description priceInr compareAtPriceInr sku isActive categoryId categorySlug categoryName imageUrl stock likedCount wishlistCount sizeReplacementCount complaintCount
   images { id url storageKey altText sortOrder isPrimary }
   variants { id sku size color stock }
 `;
@@ -9,7 +9,11 @@ const adminFields = `
 export const adminProductsQuery = gql`query AdminProducts($search:String,$active:Boolean){ adminProducts(search:$search,active:$active){ ${adminFields} } }`;
 export const adminProductQuery = gql`query AdminProduct($id:ID!){ adminProduct(id:$id){ ${adminFields} } }`;
 export const adminSaveProductMutation = gql`mutation SaveAdminProduct($id:ID,$name:String!,$slug:String!,$description:String,$priceInr:Int!,$compareAtPriceInr:Int,$sku:String!,$categoryId:ID!,$isActive:Boolean!){ saveAdminProduct(id:$id,name:$name,slug:$slug,description:$description,priceInr:$priceInr,compareAtPriceInr:$compareAtPriceInr,sku:$sku,categoryId:$categoryId,isActive:$isActive){ ${adminFields} } }`;
-export const adminDeleteProductMutation = gql`mutation DeleteAdminProduct($id:ID!){ deleteAdminProduct(id:$id) }`;
+export const adminDeleteProductMutation = gql`
+  mutation DeleteAdminProduct($id: ID!) {
+    deleteAdminProduct(id: $id)
+  }
+`;
 export const adminSaveVariantMutation = gql`mutation SaveAdminVariant($id:ID,$productId:ID!,$sku:String!,$size:String!,$color:String!,$stock:Int!){ saveAdminVariant(id:$id,productId:$productId,sku:$sku,size:$size,color:$color,stock:$stock){ ${adminFields} } }`;
 export const adminDeleteVariantMutation = gql`mutation DeleteAdminVariant($id:ID!){ deleteAdminVariant(id:$id){ ${adminFields} } }`;
 export const adminUploadImageMutation = gql`mutation UploadProductImage($productId:ID!,$filename:String!,$contentType:String!,$dataBase64:String!,$altText:String){ uploadProductImage(productId:$productId,filename:$filename,contentType:$contentType,dataBase64:$dataBase64,altText:$altText){ ${adminFields} } }`;
