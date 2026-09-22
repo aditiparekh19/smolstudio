@@ -1,5 +1,5 @@
 /*
-  SmolStudio — Add partial return quantity support
+  SmolStudio - Add partial return quantity support
 
   Adds the quantity being returned/replaced for each after-sales request.
   Existing rows default to 1 so this remains backward-compatible.

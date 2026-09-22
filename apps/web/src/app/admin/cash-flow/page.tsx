@@ -385,7 +385,7 @@ function formatCashFlowDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
 
   if (!year || !month || !day) {
-    return "—";
+    return "-";
   }
 
   return new Date(year, month - 1, day).toLocaleDateString("en-IN", {
@@ -399,7 +399,7 @@ function formatMonth(value: string) {
   const [year, month] = value.split("-").map(Number);
 
   if (!year || !month) {
-    return "—";
+    return "-";
   }
 
   return new Date(year, month - 1, 1).toLocaleDateString("en-IN", {
