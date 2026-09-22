@@ -96,9 +96,9 @@ export default function AdminPage() {
     return (
       <main className="min-h-screen bg-[#fcf8f3] px-5 py-16 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <p className="text-xs uppercase tracking-[0.2em] text-[#9a877c]">
-            Back office
-          </p>
+          <Link href="/account" className="text-sm text-[#8b7a70]">
+            ← Account
+          </Link>
 
           <h1 className="mt-3 font-serif text-4xl tracking-[-0.03em] text-[#5e473c] sm:text-5xl">
             {loggingOut ? "Logging out…" : "Loading dashboard…"}
@@ -118,9 +118,9 @@ export default function AdminPage() {
     return (
       <main className="min-h-screen bg-[#fcf8f3] px-5 py-16 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <p className="text-xs uppercase tracking-[0.2em] text-[#9a877c]">
-            Back office
-          </p>
+          <Link href="/account" className="text-sm text-[#8b7a70]">
+            ← Account
+          </Link>
 
           <h1 className="mt-3 font-serif text-5xl tracking-[-0.03em] text-[#5e473c]">
             Admin
@@ -155,9 +155,9 @@ export default function AdminPage() {
         {/* Header */}
         <header className="flex flex-col gap-6 border-b border-[#eadfd5] pb-8 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-[#9a877c]">
-              Back office
-            </p>
+            <Link href="/account" className="text-sm text-[#8b7a70]">
+        ← Account
+      </Link>
 
             <h1 className="mt-2 font-serif text-5xl tracking-[-0.04em] text-[#5e473c] sm:text-6xl">
               Dashboard

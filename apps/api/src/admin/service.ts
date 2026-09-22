@@ -1781,6 +1781,8 @@ export async function updateReturnRequest(
           r.replacement_variant_id replacementVariantId,
           r.refund_amount_inr refundAmountInr,
           r.approved_credit_inr approvedCreditInr,
+          r.return_fee_inr returnFeeInr,
+          r.return_fee_status returnFeeStatus,
           r.status currentStatus,
           r.processing_at processingAt,
           r.picked_up_at pickedUpAt,
@@ -2030,29 +2032,63 @@ export async function updateReturnRequest(
         throw new Error("Unable to calculate the paid amount for this item.");
       }
 
+      /*
+       * The paid amount is the GROSS store-credit amount.
+       *
+       * Return fee rules:
+       * - First 2 eligible returned items: ₹0
+       * - 3rd eligible returned item onward: ₹100 per item
+       * - SIZE_REPLACEMENT never reaches this block
+       * - REJECTED/CANCELLED never reach this block
+       *
+       * The fee is deducted from the store credit.
+       * No Razorpay payment is created.
+       */
+      const returnFeeInr = Math.max(0, Number(r.returnFeeInr ?? 0));
+
+      const netCreditAmount = Math.max(0, paidAmount - returnFeeInr);
+
+      if (returnFeeInr > 0 && netCreditAmount <= 0) {
+        throw new Error(
+          "Return fee cannot be greater than the store credit amount.",
+        );
+      }
+
       const credit = await addStoreCredit(
         pool,
         r.customerId,
-        paidAmount,
+        netCreditAmount,
         id,
         r.orderId,
-        note || "Store credit for approved product fault",
+        note ||
+          (returnFeeInr > 0
+            ? `Store credit for approved product fault after ₹${returnFeeInr} return fee`
+            : "Store credit for approved product fault"),
       );
 
       await pool
         .request()
         .input("id", id)
-        .input("approvedCredit", credit.amountInr)
+        .input("approvedCredit", paidAmount)
+        .input("returnFeeInr", returnFeeInr)
+        .input(
+          "returnFeeStatus",
+          returnFeeInr > 0 ? "DEDUCTED" : "NOT_REQUIRED",
+        )
         .input("note", note)
         .query(
-          `UPDATE return_requests
-         SET
-           status='COMPLETED',
-           approved_credit_inr=@approvedCredit,
-           admin_note=@note,
-           completed_at=SYSUTCDATETIME(),
-           updated_at=SYSUTCDATETIME()
-         WHERE id=@id`,
+          `
+      UPDATE return_requests
+      SET
+        status='COMPLETED',
+        approved_credit_inr=@approvedCredit,
+        return_fee_inr=@returnFeeInr,
+        return_fee_status=@returnFeeStatus,
+        admin_note=@note,
+        completed_at=SYSUTCDATETIME(),
+        updated_at=SYSUTCDATETIME()
+      WHERE id=@id
+      `,
         );
 
       return true;

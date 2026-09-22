@@ -44,6 +44,8 @@ import {
   requestReturn,
   verifyPayment,
   getStoreCreditInfo,
+  previewAfterSalesFee,
+  getEligibleProductFaultReturnQuantity,
 } from "../orders/service.js";
 import {
   adminDashboardStats,
@@ -462,6 +464,10 @@ export const typeDefs = /* GraphQL */ `
     reviewedAt: String
     completedAt: String
     pickupTrackingNumber: String
+
+    returnQuantity: Int!
+    returnFeeInr: Float!
+    returnFeeStatus: String!
   }
 
   type AfterSalesRequest {
@@ -470,8 +476,25 @@ export const typeDefs = /* GraphQL */ `
     orderItemId: ID!
     requestType: String!
     requestedSize: String
+    returnQuantity: Int!
     calculatedPaidAmountInr: Float!
+    returnFeeInr: Float!
+    returnFeeStatus: String!
     status: String!
+    reason: String!
+  }
+
+  type AfterSalesFeePreview {
+    requestType: String!
+    returnQuantity: Int!
+    eligiblePreviousQuantity: Int!
+    freeRemainingQuantity: Int!
+    chargeableQuantity: Int!
+    returnFeeInr: Float!
+  }
+
+  type EligibleProductFaultReturnQuantity {
+    eligibleQuantity: Int!
   }
 
   input AfterSalesImageInput {
@@ -586,6 +609,13 @@ export const typeDefs = /* GraphQL */ `
     myProductReview(productId: ID!): ProductReview
     adminReviews(productId: ID, published: Boolean): [AdminReview!]!
     canReviewProduct(productId: ID!): Boolean!
+
+    afterSalesFeePreview(
+      requestType: String!
+      returnQuantity: Int!
+    ): AfterSalesFeePreview!
+
+    eligibleProductFaultReturnQuantity: EligibleProductFaultReturnQuantity!
   }
 
   type Mutation {
@@ -678,6 +708,7 @@ export const typeDefs = /* GraphQL */ `
       requestType: String!
       reason: String!
       requestedSize: String
+      returnQuantity: Int!
       images: [AfterSalesImageInput!]
     ): AfterSalesRequest!
 
@@ -924,6 +955,39 @@ export const schema = createSchema<GraphQLContext>({
         const u = requireUser(ctx.user);
         return customerPurchasedProduct(u.id, args.productId);
       },
+
+      afterSalesFeePreview: async (
+        _: unknown,
+        args: {
+          requestType: string;
+          returnQuantity: number;
+        },
+        ctx,
+      ) => {
+        const u = requireUser(ctx.user);
+
+        return previewAfterSalesFee(
+          u.id,
+          args.requestType,
+          args.returnQuantity,
+        );
+      },
+
+      eligibleProductFaultReturnQuantity: async (
+        _: unknown,
+        __: unknown,
+        ctx,
+      ) => {
+        const u = requireUser(ctx.user);
+
+        const eligibleQuantity = await getEligibleProductFaultReturnQuantity(
+          u.id,
+        );
+
+        return {
+          eligibleQuantity,
+        };
+      },
     },
 
     Mutation: {
@@ -1166,6 +1230,7 @@ export const schema = createSchema<GraphQLContext>({
             args.reason,
             args.requestedSize,
             args.images,
+            args.returnQuantity,
           );
         } catch (e) {
           return safeError(e);

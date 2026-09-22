@@ -3214,9 +3214,7 @@ export async function requestReturn(
   orderId: string,
   reason: string,
 ) {
-  if (!reason.trim()) {
-    throw new Error("Return reason is required.");
-  }
+  if (!reason.trim()) throw new Error("Return reason is required.");
 
   const pool = await getDb();
 
@@ -3230,20 +3228,16 @@ export async function requestReturn(
         SELECT TOP 1
           id,
           status,
-          payment_status
-            paymentStatus,
+          payment_status paymentStatus,
           total_inr totalInr
         FROM orders
-        WHERE id = @id
-          AND customer_id =
-            @customerId
+        WHERE id=@id
+          AND customer_id=@customerId
         `,
       )
   ).recordset[0];
 
-  if (!o) {
-    throw new Error("Order not found.");
-  }
+  if (!o) throw new Error("Order not found.");
 
   if (o.status !== "DELIVERED") {
     throw new Error("Returns can be requested after delivery.");
@@ -3254,21 +3248,79 @@ export async function requestReturn(
     .input("orderId", orderId)
     .query(
       `
-        SELECT TOP 1
-          id
-        FROM return_requests
-        WHERE order_id =
-          @orderId
-          AND status NOT IN (
-            'REJECTED',
-            'CANCELLED'
-          )
-        `,
+      SELECT TOP 1 id
+      FROM return_requests
+      WHERE order_id=@orderId
+        AND status NOT IN ('REJECTED','CANCELLED')
+      `,
     );
 
   if (existing.recordset.length) {
     throw new Error("A return request already exists for this order.");
   }
+
+  /*
+   * Count previously returned ELIGIBLE ITEMS.
+   *
+   * Rules:
+   * - PROCESSING and COMPLETED count.
+   * - SIZE_REPLACEMENT does not count.
+   * - REJECTED/CANCELLED do not count.
+   * - Count quantity, not number of return requests.
+   *
+   * Example:
+   * previous eligible quantity = 2
+   * current return quantity = 1
+   * current item is the 3rd eligible returned item
+   * => ₹100 fee.
+   */
+  const previousEligible = (
+    await pool
+      .request()
+      .input("customerId", customerId)
+      .query<any>(
+        `
+        SELECT
+          COALESCE(
+            SUM(
+              CASE
+                WHEN rr.order_item_id IS NOT NULL
+                  THEN ISNULL(oi.quantity, 1)
+                ELSE 1
+              END
+            ),
+            0
+          ) AS eligibleItemCount
+        FROM return_requests rr
+        LEFT JOIN order_items oi
+          ON oi.id = rr.order_item_id
+        WHERE rr.customer_id=@customerId
+          AND rr.status IN ('PROCESSING','COMPLETED')
+          AND ISNULL(rr.request_type, '') <> 'SIZE_REPLACEMENT'
+        `,
+      )
+  ).recordset[0];
+
+  const previousEligibleItemCount = Number(
+    previousEligible?.eligibleItemCount ?? 0,
+  );
+
+  /*
+   * This legacy requestReturn() creates an order-level return request,
+   * so treat it as one eligible item.
+   *
+   * The newer item-level return flow will use the actual order-item
+   * quantity when creating its return request.
+   */
+  const currentReturnQuantity = 1;
+
+  const feeApplies =
+    previousEligibleItemCount + currentReturnQuantity >
+    env.RETURN_FEE_THRESHOLD;
+
+  let returnFeeInr = 0;
+
+  const returnFeeStatus = returnFeeInr > 0 ? "PENDING" : "NOT_REQUIRED";
 
   const id = randomUUID();
 
@@ -3279,6 +3331,8 @@ export async function requestReturn(
     .input("customerId", customerId)
     .input("reason", reason.trim())
     .input("amount", o.totalInr)
+    .input("returnFeeInr", returnFeeInr)
+    .input("returnFeeStatus", returnFeeStatus)
     .query(
       `
       INSERT INTO return_requests(
@@ -3286,14 +3340,18 @@ export async function requestReturn(
         order_id,
         customer_id,
         reason,
-        refund_amount_inr
+        refund_amount_inr,
+        return_fee_inr,
+        return_fee_status
       )
       VALUES(
         @id,
         @orderId,
         @customerId,
         @reason,
-        @amount
+        @amount,
+        @returnFeeInr,
+        @returnFeeStatus
       )
       `,
     );
@@ -3308,6 +3366,7 @@ export async function requestReturn(
 export async function calculateOrderItemPaidAmount(
   orderId: string,
   orderItemId: string,
+  returnQuantity: number = 1,
 ) {
   const pool = await getDb();
 
@@ -3318,18 +3377,17 @@ export async function calculateOrderItemPaidAmount(
     .query<any>(
       `
         SELECT TOP 1
-          oi.id orderItemId,
-          oi.total_price_inr itemTotal,
-          o.subtotal_inr subtotal,
-          o.discount_inr discount
+          oi.id AS orderItemId,
+          oi.quantity,
+          oi.total_price_inr AS itemTotal,
+          o.subtotal_inr AS subtotal,
+          o.discount_inr AS discount
         FROM order_items oi
         INNER JOIN orders o
           ON o.id = oi.order_id
-        WHERE oi.id =
-          @orderItemId
-          AND oi.order_id =
-            @orderId
-        `,
+        WHERE oi.id = @orderItemId
+          AND oi.order_id = @orderId
+      `,
     );
 
   const row = result.recordset[0];
@@ -3338,12 +3396,30 @@ export async function calculateOrderItemPaidAmount(
     throw new Error("Order item not found.");
   }
 
+  const purchasedQuantity = Number(row.quantity ?? 0);
+
+  if (!Number.isInteger(purchasedQuantity) || purchasedQuantity < 1) {
+    throw new Error("Invalid order item quantity.");
+  }
+
+  if (
+    !Number.isInteger(returnQuantity) ||
+    returnQuantity < 1 ||
+    returnQuantity > purchasedQuantity
+  ) {
+    throw new Error(
+      `Return quantity must be between 1 and ${purchasedQuantity}.`,
+    );
+  }
+
   const itemTotal = roundMoney(Number(row.itemTotal));
 
   const subtotal = roundMoney(Number(row.subtotal));
 
   const orderDiscount = Math.max(0, roundMoney(Number(row.discount)));
 
+  // Allocate the order-level discount to this item
+  // using the same proportional logic as before.
   let allocatedDiscount = 0;
 
   if (subtotal > 0 && orderDiscount > 0) {
@@ -3352,9 +3428,16 @@ export async function calculateOrderItemPaidAmount(
 
   allocatedDiscount = Math.min(itemTotal, allocatedDiscount);
 
-  const paidAmount = roundMoney(itemTotal - allocatedDiscount);
+  // Paid amount for the COMPLETE order item.
+  const fullItemPaidAmount = roundMoney(itemTotal - allocatedDiscount);
 
-  return Math.max(0, paidAmount);
+  // Allocate the paid amount proportionally to the
+  // quantity being returned.
+  const paidAmountPerUnit = fullItemPaidAmount / purchasedQuantity;
+
+  const returnedPaidAmount = roundMoney(paidAmountPerUnit * returnQuantity);
+
+  return Math.max(0, returnedPaidAmount);
 }
 
 async function getVariantSizeColumn(pool: sql.ConnectionPool) {
@@ -3581,6 +3664,7 @@ export async function requestItemAfterSales(
   reason: string,
   requestedSize?: string | null,
   images: AfterSalesImageInput[] = [],
+  returnQuantity: number = 1,
 ) {
   const normalizedType = String(requestType ?? "")
     .trim()
@@ -3614,6 +3698,10 @@ export async function requestItemAfterSales(
 
   const pool = await getDb();
 
+  // ------------------------------------------------------------
+  // 1. Validate order
+  // ------------------------------------------------------------
+
   const order = await pool
     .request()
     .input("orderId", orderId)
@@ -3625,9 +3713,8 @@ export async function requestItemAfterSales(
           status
         FROM orders
         WHERE id = @orderId
-          AND customer_id =
-            @customerId
-        `,
+          AND customer_id = @customerId
+      `,
     );
 
   const orderRow = order.recordset[0];
@@ -3640,6 +3727,10 @@ export async function requestItemAfterSales(
     throw new Error("After-sales requests can be made after delivery.");
   }
 
+  // ------------------------------------------------------------
+  // 2. Validate order item + purchased quantity
+  // ------------------------------------------------------------
+
   const orderItem = await pool
     .request()
     .input("orderItemId", orderItemId)
@@ -3647,17 +3738,37 @@ export async function requestItemAfterSales(
     .query<any>(
       `
         SELECT TOP 1
-          id
+          id,
+          quantity
         FROM order_items
         WHERE id = @orderItemId
-          AND order_id =
-            @orderId
-        `,
+          AND order_id = @orderId
+      `,
     );
 
   if (!orderItem.recordset.length) {
     throw new Error("Order item not found.");
   }
+
+  const purchasedQuantity = Number(orderItem.recordset[0]?.quantity ?? 0);
+
+  if (!Number.isInteger(purchasedQuantity) || purchasedQuantity < 1) {
+    throw new Error("This item cannot be returned.");
+  }
+
+  if (
+    !Number.isInteger(returnQuantity) ||
+    returnQuantity < 1 ||
+    returnQuantity > purchasedQuantity
+  ) {
+    throw new Error(
+      `Please select a return quantity between 1 and ${purchasedQuantity}.`,
+    );
+  }
+
+  // ------------------------------------------------------------
+  // 3. Prevent overlapping active requests
+  // ------------------------------------------------------------
 
   const existing = await pool
     .request()
@@ -3667,13 +3778,14 @@ export async function requestItemAfterSales(
         SELECT TOP 1
           id
         FROM return_requests
-        WHERE order_item_id =
-          @orderItemId
-          AND status NOT IN (
-            'REJECTED',
-            'CANCELLED'
+        WHERE order_item_id = @orderItemId
+          AND status IN (
+            'REQUESTED',
+            'APPROVED',
+            'PROCESSING',
+            'PICKUP_ASSIGNED'
           )
-        `,
+      `,
     );
 
   if (existing.recordset.length) {
@@ -3682,9 +3794,55 @@ export async function requestItemAfterSales(
     );
   }
 
+  // ------------------------------------------------------------
+  // 4. Calculate quantity already returned/replaced
+  //
+  // REJECTED/CANCELLED quantities become available again.
+  // ------------------------------------------------------------
+
+  const previousQuantityResult = await pool
+    .request()
+    .input("orderItemId", orderItemId)
+    .query<{ total: number }>(
+      `
+        SELECT
+          COALESCE(SUM(return_quantity), 0) AS total
+        FROM return_requests
+        WHERE order_item_id = @orderItemId
+          AND status NOT IN (
+            'REJECTED',
+            'CANCELLED'
+          )
+      `,
+    );
+
+  const previouslyRequestedQuantity = Number(
+    previousQuantityResult.recordset[0]?.total ?? 0,
+  );
+
+  const remainingQuantity = purchasedQuantity - previouslyRequestedQuantity;
+
+  if (remainingQuantity < 1) {
+    throw new Error(
+      "All quantities of this item have already been returned or replaced.",
+    );
+  }
+
+  if (returnQuantity > remainingQuantity) {
+    throw new Error(
+      `Only ${remainingQuantity} ${
+        remainingQuantity === 1 ? "item is" : "items are"
+      } still eligible for return or replacement.`,
+    );
+  }
+
+  // ------------------------------------------------------------
+  // 5. Validate replacement size
+  // ------------------------------------------------------------
+
   let replacementVariantId: string | null = null;
 
-  let normalizedRequestedSize: string | null = requestedSize?.trim() || null;
+  let normalizedRequestedSize = requestedSize?.trim() || null;
 
   if (normalizedType === "SIZE_REPLACEMENT") {
     const replacement = await validateReplacementVariant(
@@ -3700,25 +3858,99 @@ export async function requestItemAfterSales(
     );
   }
 
+  // ------------------------------------------------------------
+  // 6. Calculate paid amount
+  //
+  // NOTE:
+  // This remains the existing order-item paid amount calculation.
+  // We will adjust this separately if refund/credit must also be
+  // proportional to returnQuantity.
+  // ------------------------------------------------------------
+
   const calculatedPaidAmount = await calculateOrderItemPaidAmount(
     orderId,
     orderItemId,
+    returnQuantity,
   );
 
-  // Prevent a customer from submitting another request
-  // for an item whose previous return request was rejected.
+  // ------------------------------------------------------------
+  // 7. Calculate return fee
+  //
+  // Rules:
+  // - SIZE_REPLACEMENT = ₹0
+  // - Only PRODUCT_FAULT counts toward the return-fee allowance
+  // - Only PROCESSING and COMPLETED previous requests count
+  // - REJECTED/CANCELLED do not count
+  // - Count return_quantity, NOT order_items.quantity
+  // - First 2 eligible returned items are free
+  // - Every eligible item after the first 2 costs RETURN_FEE_INR
+  // ------------------------------------------------------------
+
+  let returnFeeInr = 0;
+
+  if (normalizedType === "PRODUCT_FAULT") {
+    const eligibleReturnsResult = await pool
+      .request()
+      .input("customerId", customerId)
+      .query<{ total: number }>(
+        `
+          SELECT
+            COALESCE(SUM(return_quantity), 0) AS total
+          FROM return_requests
+          WHERE customer_id = @customerId
+            AND request_type = 'PRODUCT_FAULT'
+            AND status IN (
+              'PROCESSING',
+              'COMPLETED'
+            )
+        `,
+      );
+
+    const previousEligibleQuantity = Number(
+      eligibleReturnsResult.recordset[0]?.total ?? 0,
+    );
+
+    const threshold = Number(env.RETURN_FEE_THRESHOLD ?? 2);
+
+    const feePerItem = Number(env.RETURN_FEE_INR ?? 100);
+
+    const previousChargeableQuantity = Math.max(
+      0,
+      previousEligibleQuantity - threshold,
+    );
+
+    const eligibleQuantityAfterThisRequest =
+      previousEligibleQuantity + returnQuantity;
+
+    const chargeableQuantityAfterThisRequest = Math.max(
+      0,
+      eligibleQuantityAfterThisRequest - threshold,
+    );
+
+    const newChargeableQuantity =
+      chargeableQuantityAfterThisRequest - previousChargeableQuantity;
+
+    returnFeeInr = newChargeableQuantity * feePerItem;
+  }
+
+  const returnFeeStatus = returnFeeInr > 0 ? "PENDING" : "NOT_REQUIRED";
+
+  // ------------------------------------------------------------
+  // 8. Prevent resubmission after a rejected request
+  // ------------------------------------------------------------
+
   const rejectedRequest = await pool
     .request()
     .input("orderId", orderId)
     .input("orderItemId", orderItemId)
     .query<{ count: number }>(
       `
-    SELECT COUNT(*) AS count
-    FROM return_requests
-    WHERE order_id = @orderId
-      AND order_item_id = @orderItemId
-      AND status = 'REJECTED'
-    `,
+        SELECT COUNT(*) AS count
+        FROM return_requests
+        WHERE order_id = @orderId
+          AND order_item_id = @orderItemId
+          AND status = 'REJECTED'
+      `,
     );
 
   if (Number(rejectedRequest.recordset[0]?.count ?? 0) > 0) {
@@ -3726,6 +3958,10 @@ export async function requestItemAfterSales(
       "A return request for this item was already rejected and cannot be submitted again.",
     );
   }
+
+  // ------------------------------------------------------------
+  // 9. Save request
+  // ------------------------------------------------------------
 
   const id = randomUUID();
 
@@ -3740,41 +3976,58 @@ export async function requestItemAfterSales(
     .input("reason", reason.trim())
     .input("replacementVariantId", replacementVariantId)
     .input("refundAmount", calculatedPaidAmount)
+    .input("returnQuantity", returnQuantity)
+    .input("returnFeeInr", returnFeeInr)
+    .input("returnFeeStatus", returnFeeStatus)
     .query(
       `
-      INSERT INTO return_requests(
-        id,
-        order_id,
-        order_item_id,
-        customer_id,
-        request_type,
-        requested_size,
-        reason,
-        replacement_variant_id,
-        status,
-        refund_amount_inr,
-        approved_credit_inr
-      )
-      VALUES(
-        @id,
-        @orderId,
-        @orderItemId,
-        @customerId,
-        @requestType,
-        @requestedSize,
-        @reason,
-        @replacementVariantId,
-        'REQUESTED',
-        @refundAmount,
-        NULL
-      )
+        INSERT INTO return_requests(
+          id,
+          order_id,
+          order_item_id,
+          customer_id,
+          request_type,
+          requested_size,
+          reason,
+          replacement_variant_id,
+          status,
+          refund_amount_inr,
+          approved_credit_inr,
+          return_quantity,
+          return_fee_inr,
+          return_fee_status
+        )
+        VALUES(
+          @id,
+          @orderId,
+          @orderItemId,
+          @customerId,
+          @requestType,
+          @requestedSize,
+          @reason,
+          @replacementVariantId,
+          'REQUESTED',
+          @refundAmount,
+          NULL,
+          @returnQuantity,
+          @returnFeeInr,
+          @returnFeeStatus
+        )
       `,
     );
+
+  // ------------------------------------------------------------
+  // 10. Save product-fault images
+  // ------------------------------------------------------------
 
   const savedImages =
     normalizedType === "PRODUCT_FAULT"
       ? await saveReturnRequestImages(id, images)
       : [];
+
+  // ------------------------------------------------------------
+  // 11. Return GraphQL response
+  // ------------------------------------------------------------
 
   return {
     id,
@@ -3782,10 +4035,118 @@ export async function requestItemAfterSales(
     orderItemId,
     requestType: normalizedType,
     requestedSize: normalizedRequestedSize,
+    returnQuantity,
     calculatedPaidAmountInr: calculatedPaidAmount,
+    returnFeeInr,
+    returnFeeStatus,
+    reason: reason.trim(),
     status: "REQUESTED",
     images: savedImages,
   };
+}
+
+export async function previewAfterSalesFee(
+  customerId: string,
+  requestType: string,
+  returnQuantity: number,
+) {
+  const normalizedType = requestType.trim().toUpperCase();
+
+  if (
+    normalizedType !== "PRODUCT_FAULT" &&
+    normalizedType !== "SIZE_REPLACEMENT"
+  ) {
+    throw new Error("Invalid after-sales request type.");
+  }
+
+  if (!Number.isInteger(returnQuantity) || returnQuantity < 1) {
+    throw new Error("Return quantity must be at least 1.");
+  }
+
+  // Size replacements never incur a return fee
+  // and never count toward the customer's allowance.
+  if (normalizedType === "SIZE_REPLACEMENT") {
+    return {
+      requestType: normalizedType,
+      returnQuantity,
+      eligiblePreviousQuantity: 0,
+      freeRemainingQuantity: 0,
+      chargeableQuantity: 0,
+      returnFeeInr: 0,
+    };
+  }
+
+  const pool = await getDb();
+
+  const eligibleReturnsResult = await pool
+    .request()
+    .input("customerId", customerId)
+    .query<{ total: number }>(
+      `
+        SELECT
+          COALESCE(SUM(return_quantity), 0) AS total
+        FROM return_requests
+        WHERE customer_id = @customerId
+          AND request_type = 'PRODUCT_FAULT'
+          AND status IN (
+            'PROCESSING',
+            'COMPLETED'
+          )
+      `,
+    );
+
+  const eligiblePreviousQuantity = Number(
+    eligibleReturnsResult.recordset[0]?.total ?? 0,
+  );
+
+  const threshold = Number(env.RETURN_FEE_THRESHOLD ?? 2);
+
+  const feePerItem = Number(env.RETURN_FEE_INR ?? 100);
+
+  const freeRemainingQuantity = Math.max(
+    0,
+    threshold - eligiblePreviousQuantity,
+  );
+
+  const chargeableQuantity =
+    Math.max(0, eligiblePreviousQuantity + returnQuantity - threshold) -
+    Math.max(0, eligiblePreviousQuantity - threshold);
+
+  const returnFeeInr = chargeableQuantity * feePerItem;
+
+  return {
+    requestType: normalizedType,
+    returnQuantity,
+    eligiblePreviousQuantity,
+    freeRemainingQuantity,
+    chargeableQuantity,
+    returnFeeInr,
+  };
+}
+
+export async function getEligibleProductFaultReturnQuantity(
+  customerId: string,
+) {
+  const pool = await getDb();
+
+  const result = await pool
+    .request()
+    .input("customerId", customerId)
+    .query<{ total: number }>(
+      `
+        SELECT
+          COALESCE(SUM(return_quantity), 0) AS total
+        FROM return_requests
+        WHERE customer_id = @customerId
+          AND request_type = 'PRODUCT_FAULT'
+          AND status IN (
+            'PROCESSING',
+            'COMPLETED'
+          )
+      `,
+    );
+
+  return Number(result.recordset[0]?.total ?? 0);
 }
 
 /* ============================================================
@@ -3800,88 +4161,108 @@ export async function listCustomerReturns(customerId: string) {
     .input("customerId", customerId)
     .query<any>(
       `
-        SELECT
-          r.id,
-          r.order_id orderId,
-          o.order_number orderNumber,
-          r.customer_id customerId,
-          c.email customerEmail,
-          r.order_item_id orderItemId,
-          r.request_type requestType,
-          r.requested_size requestedSize,
-          r.reason,
-          r.status,
-          CAST(
-            r.refund_amount_inr
-            AS decimal(12,2)
-          ) refundAmountInr,
-          CAST(
-            r.approved_credit_inr
-            AS decimal(12,2)
-          ) approvedCreditInr,
-          r.replacement_variant_id
-            replacementVariantId,
-          r.replacement_order_id
-            replacementOrderId,
-          r.admin_note adminNote,
-          r.admin_reviewed_at
-            adminReviewedAt,
-          r.admin_reviewed_by
-            adminReviewedBy,
-          r.replacement_fulfilled_at
-            replacementFulfilledAt,
-          r.created_at createdAt,
-          r.updated_at updatedAt
-        FROM return_requests r
-        INNER JOIN orders o
-          ON o.id = r.order_id
-        LEFT JOIN customers c
-          ON c.id = r.customer_id
-        WHERE r.customer_id =
-          @customerId
-        ORDER BY
-          r.created_at DESC
-        `,
+      SELECT
+        r.id,
+        r.order_id AS orderId,
+        o.order_number AS orderNumber,
+
+        r.customer_id AS customerId,
+        c.email AS customerEmail,
+
+        r.order_item_id AS orderItemId,
+        r.request_type AS requestType,
+        r.requested_size AS requestedSize,
+        r.reason,
+        r.status,
+
+        CAST(ISNULL(r.refund_amount_inr, 0) AS decimal(12,2))
+          AS refundAmountInr,
+
+        CAST(ISNULL(r.approved_credit_inr, 0) AS decimal(12,2))
+          AS approvedCreditInr,
+
+        r.replacement_variant_id AS replacementVariantId,
+        r.replacement_order_id AS replacementOrderId,
+
+        r.admin_note AS adminNote,
+        r.admin_reviewed_at AS adminReviewedAt,
+        r.admin_reviewed_by AS adminReviewedBy,
+
+        r.processing_at AS processingAt,
+        r.picked_up_at AS pickedUpAt,
+        r.received_at AS receivedAt,
+        r.reviewed_at AS reviewedAt,
+        r.completed_at AS completedAt,
+
+        r.pickup_tracking_number AS pickupTrackingNumber,
+        r.replacement_fulfilled_at AS replacementFulfilledAt,
+
+        r.return_quantity AS returnQuantity,
+
+        CAST(ISNULL(r.return_fee_inr, 0) AS decimal(12,2))
+          AS returnFeeInr,
+
+        r.return_fee_status AS returnFeeStatus,
+
+        CAST(
+          CASE
+            WHEN ISNULL(r.approved_credit_inr, 0)
+                 - ISNULL(r.return_fee_inr, 0) < 0
+            THEN 0
+            ELSE ISNULL(r.approved_credit_inr, 0)
+                 - ISNULL(r.return_fee_inr, 0)
+          END
+          AS decimal(12,2)
+        ) AS creditedAmountInr,
+
+        r.created_at AS createdAt,
+        r.updated_at AS updatedAt
+
+      FROM return_requests r
+
+      INNER JOIN orders o
+        ON o.id = r.order_id
+
+      LEFT JOIN customers c
+        ON c.id = r.customer_id
+
+      WHERE r.customer_id = @customerId
+
+      ORDER BY r.created_at DESC
+      `,
     );
 
-  return result.recordset.map((x: any) => {
-    const images = x.imagesJson ? JSON.parse(x.imagesJson) : [];
+  return result.recordset.map((x: any) => ({
+    ...x,
 
-    return {
-      ...x,
+    refundAmountInr: Number(x.refundAmountInr ?? 0),
+    approvedCreditInr: Number(x.approvedCreditInr ?? 0),
+    returnFeeInr: Number(x.returnFeeInr ?? 0),
+    creditedAmountInr: Number(x.creditedAmountInr ?? 0),
 
-      images: images.map((image: any) => ({
-        id: image.id,
-        filename: image.filename,
-        contentType: image.contentType,
-        url:
-          `${(process.env.PUBLIC_API_URL ?? "").replace(/\/$/, "")}` +
-          `/media/returns/${image.storagePath}`,
-      })),
+    returnQuantity: Number(x.returnQuantity ?? 1),
 
-      refundAmountInr:
-        x.refundAmountInr == null ? null : Number(x.refundAmountInr),
+    adminReviewedAt: x.adminReviewedAt
+      ? new Date(x.adminReviewedAt).toISOString()
+      : null,
 
-      approvedCreditInr:
-        x.approvedCreditInr == null ? null : Number(x.approvedCreditInr),
+    processingAt: x.processingAt
+      ? new Date(x.processingAt).toISOString()
+      : null,
 
-      unitPriceInr: x.unitPriceInr == null ? null : Number(x.unitPriceInr),
+    pickedUpAt: x.pickedUpAt ? new Date(x.pickedUpAt).toISOString() : null,
 
-      totalPriceInr: x.totalPriceInr == null ? null : Number(x.totalPriceInr),
+    receivedAt: x.receivedAt ? new Date(x.receivedAt).toISOString() : null,
 
-      quantity: x.quantity == null ? null : Number(x.quantity),
+    reviewedAt: x.reviewedAt ? new Date(x.reviewedAt).toISOString() : null,
 
-      createdAt: new Date(x.createdAt).toISOString(),
+    completedAt: x.completedAt ? new Date(x.completedAt).toISOString() : null,
 
-      updatedAt: new Date(x.updatedAt).toISOString(),
+    replacementFulfilledAt: x.replacementFulfilledAt
+      ? new Date(x.replacementFulfilledAt).toISOString()
+      : null,
 
-      adminReviewedAt: x.adminReviewedAt
-        ? new Date(x.adminReviewedAt).toISOString()
-        : null,
-
-      replacementFulfilledAt: x.replacementFulfilledAt
-        ? new Date(x.replacementFulfilledAt).toISOString()
-        : null,
-    };
-  });
+    createdAt: new Date(x.createdAt).toISOString(),
+    updatedAt: new Date(x.updatedAt).toISOString(),
+  }));
 }

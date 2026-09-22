@@ -33,6 +33,9 @@ const envSchema = z.object({
     .min(5)
     .max(120)
     .default(15),
+
+  RETURN_FEE_INR: z.coerce.number().min(0).default(100),
+  RETURN_FEE_THRESHOLD: z.coerce.number().int().min(0).default(2),
   RAZORPAY_WEBHOOK_SECRET: z.string().default(""),
   STORE_SUPPORT_EMAIL: z.string().email().default("support@smolstudio.local"),
   SMTP_HOST: z.string().default(""),

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import confetti from "canvas-confetti";
 import { useAuth } from "../../components/AuthProvider";
 import { useCart } from "../../components/CartProvider";
 import { apiClient } from "../../lib/graphql";
@@ -11,6 +12,7 @@ import {
   createPaymentOrderMutation,
   verifyPaymentMutation,
   myAddressesQuery,
+  eligibleProductFaultReturnQuantityQuery,
 } from "../../lib/orders";
 
 declare global {
@@ -56,10 +58,27 @@ export default function CheckoutPage() {
 
   const [totals, setTotals] = useState<any>(null);
 
+  const [
+    eligibleProductFaultReturnQuantity,
+    setEligibleProductFaultReturnQuantity,
+  ] = useState(0);
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [phoneError, setPhoneError] = useState("");
+
+  /*
+   * ============================================================
+   * CONFETTI TRACKING
+   * ============================================================
+   *
+   * These refs prevent confetti from firing repeatedly when
+   * React re-renders or checkout totals are recalculated.
+   */
+  const previousShippingRef = useRef<number | null>(null);
+  const freeDeliveryCelebratedRef = useRef(false);
+  const orderCelebratedRef = useRef(false);
 
   const mapKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
@@ -80,13 +99,121 @@ export default function CheckoutPage() {
     [address],
   );
 
+  /*
+   * ============================================================
+   * CONFETTI HELPERS
+   * ============================================================
+   */
+
+  function celebrateFreeDelivery() {
+    void confetti({
+      particleCount: 90,
+      spread: 75,
+      startVelocity: 30,
+      origin: {
+        x: 0.5,
+        y: 0.65,
+      },
+      scalar: 0.9,
+    });
+  }
+
+  function celebrateOrderSuccess() {
+    const duration = 1600;
+    const animationEnd = Date.now() + duration;
+
+    const interval = window.setInterval(() => {
+      const timeLeft = animationEnd - Date.now();
+
+      if (timeLeft <= 0) {
+        window.clearInterval(interval);
+        return;
+      }
+
+      const particleCount = Math.round(45 * (timeLeft / duration));
+
+      void confetti({
+        particleCount,
+        spread: 70,
+        startVelocity: 45,
+        origin: {
+          x: Math.random() * 0.25 + 0.05,
+          y: 0.65,
+        },
+        scalar: 1,
+      });
+
+      void confetti({
+        particleCount,
+        spread: 70,
+        startVelocity: 45,
+        origin: {
+          x: Math.random() * 0.25 + 0.7,
+          y: 0.65,
+        },
+        scalar: 1,
+      });
+    }, 180);
+  }
+
+  /*
+   * ============================================================
+   * WATCH FOR FREE DELIVERY
+   * ============================================================
+   *
+   * Confetti only fires when shipping changes from a paid amount
+   * to ₹0. It does not fire simply because the checkout page
+   * initially loads with free shipping.
+   */
+  useEffect(() => {
+    if (!totals) return;
+
+    const shipping = Number(totals.shippingInr ?? 0);
+
+    const previousShipping = previousShippingRef.current;
+
+    if (
+      previousShipping !== null &&
+      previousShipping > 0 &&
+      shipping <= 0 &&
+      !freeDeliveryCelebratedRef.current
+    ) {
+      freeDeliveryCelebratedRef.current = true;
+      celebrateFreeDelivery();
+    }
+
+    previousShippingRef.current = shipping;
+  }, [totals]);
+
+  /*
+   * ============================================================
+   * LOAD ELIGIBLE RETURN QUANTITY
+   * ============================================================
+   */
+  useEffect(() => {
+    if (!user) return;
+
+    void apiClient()
+      .request<any>(eligibleProductFaultReturnQuantityQuery)
+      .then((r) => {
+        setEligibleProductFaultReturnQuantity(
+          Number(r.eligibleProductFaultReturnQuantity?.eligibleQuantity ?? 0),
+        );
+      })
+      .catch(() => {
+        setEligibleProductFaultReturnQuantity(0);
+      });
+  }, [user]);
+
+  /*
+   * Existing dependency tracking.
+   */
   useEffect(() => {}, [user, items.length, coupon, appliedCoupon, totals]);
 
   /*
-   * Load Razorpay.
-   *
-   * We still load it for normal payments, but
-   * full store-credit orders will never open it.
+   * ============================================================
+   * LOAD RAZORPAY
+   * ============================================================
    */
   useEffect(() => {
     if (!document.querySelector("script[data-razorpay]")) {
@@ -94,6 +221,7 @@ export default function CheckoutPage() {
 
       s.src = "https://checkout.razorpay.com/v1/checkout.js";
       s.async = true;
+
       s.dataset.razorpay = "1";
 
       document.body.appendChild(s);
@@ -101,7 +229,9 @@ export default function CheckoutPage() {
   }, []);
 
   /*
-   * Load saved addresses.
+   * ============================================================
+   * LOAD SAVED ADDRESSES
+   * ============================================================
    */
   useEffect(() => {
     if (!user) return;
@@ -115,11 +245,13 @@ export default function CheckoutPage() {
           setAddress(r.myAddresses[0]);
         }
       })
-      .catch((err) => {});
+      .catch(() => {});
   }, [user]);
 
   /*
-   * Calculate checkout totals.
+   * ============================================================
+   * CALCULATE CHECKOUT TOTALS
+   * ============================================================
    */
   useEffect(() => {
     if (!user || !items.length) {
@@ -144,6 +276,7 @@ export default function CheckoutPage() {
             Number(r.checkoutTotals?.discountInr ?? 0) <= 0
           ) {
             setAppliedCoupon("");
+
             setCouponError(
               "This coupon could not be applied to your current order.",
             );
@@ -176,6 +309,9 @@ export default function CheckoutPage() {
   if (!items.length) {
     return (
       <main className="mx-auto max-w-3xl px-5 py-16">
+        <Link href="/account" className="text-sm text-[#8b7a70]">
+          ← Account
+        </Link>
         <h1 className="font-serif text-5xl text-[#5e473c]">Checkout</h1>
 
         <p className="mt-4 text-[#8b7a70]">Your bag is empty.</p>
@@ -255,19 +391,17 @@ export default function CheckoutPage() {
        * ========================================================
        * FULL STORE CREDIT CHECKOUT
        * ========================================================
-       *
-       * Backend returns:
-       *
-       * amount: 0
-       * razorpayOrderId: ""
-       *
-       * Do NOT open Razorpay.
        */
       if (
         Number(paymentOrder.amount) <= 0 ||
         Number(paymentOrder.payableInr) <= 0
       ) {
         setMessage("Your order has been placed using store credit.");
+
+        if (!orderCelebratedRef.current) {
+          orderCelebratedRef.current = true;
+          celebrateOrderSuccess();
+        }
 
         await refreshCart();
 
@@ -335,6 +469,15 @@ export default function CheckoutPage() {
               );
             }
 
+            /*
+             * Payment has been successfully verified.
+             * Celebrate before redirecting to the order page.
+             */
+            if (!orderCelebratedRef.current) {
+              orderCelebratedRef.current = true;
+              celebrateOrderSuccess();
+            }
+
             await refreshCart();
 
             router.push(`/account/orders/${orderId}`);
@@ -394,6 +537,8 @@ export default function CheckoutPage() {
   const payable = Number(totals?.payableInr ?? totals?.totalInr ?? 0);
 
   const fullyCovered = totals && payable <= 0;
+
+  const showReturnPolicyNotice = eligibleProductFaultReturnQuantity >= 2;
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-14 lg:px-8">
@@ -531,6 +676,30 @@ export default function CheckoutPage() {
               </a>
             )}
           </div>
+
+          {/* =====================================================
+              RETURN POLICY NOTICE
+              ===================================================== */}
+
+          {showReturnPolicyNotice && (
+            <div className="mt-6 rounded-2xl border border-[#e8d8c8] bg-[#fffaf4] px-5 py-4">
+              <p className="text-sm font-semibold text-[#5e473c]">
+                Return policy notice
+              </p>
+
+              <p className="mt-2 text-sm leading-6 text-[#6d5a50]">
+                Your first 2 eligible product-fault return items are free. From
+                the 3rd eligible item onward, a ₹100 return fee per item will
+                apply and be deducted from your approved store credit.
+              </p>
+
+              <p className="mt-2 text-xs leading-5 text-[#8b7a70]">
+                Size replacements do not carry a return fee. Rejected or
+                cancelled return requests do not count toward the eligible
+                return allowance.
+              </p>
+            </div>
+          )}
 
           <button
             disabled={busy}

@@ -165,6 +165,7 @@ export const requestItemAfterSalesMutation = gql`
     $requestType: String!
     $reason: String!
     $requestedSize: String
+    $returnQuantity: Int!
     $images: [AfterSalesImageInput!]
   ) {
     requestItemAfterSales(
@@ -173,6 +174,7 @@ export const requestItemAfterSalesMutation = gql`
       requestType: $requestType
       reason: $reason
       requestedSize: $requestedSize
+      returnQuantity: $returnQuantity
       images: $images
     ) {
       id
@@ -180,8 +182,12 @@ export const requestItemAfterSalesMutation = gql`
       orderItemId
       requestType
       requestedSize
-      calculatedPaidAmountInr
+      reason
       status
+      returnQuantity
+      calculatedPaidAmountInr
+      returnFeeInr
+      returnFeeStatus
     }
   }
 `;
@@ -288,6 +294,9 @@ export const myReturnsQuery = gql`
       replacementFulfilledAt
       createdAt
       updatedAt
+      returnQuantity
+      returnFeeInr
+      returnFeeStatus
     }
   }
 `;
@@ -685,6 +694,30 @@ export const adminCashFlowHistoryQuery = gql`
       refundInr
       storeCreditInr
       netCashFlowInr
+    }
+  }
+`;
+
+export const afterSalesFeePreviewQuery = gql`
+  query AfterSalesFeePreview($requestType: String!, $returnQuantity: Int!) {
+    afterSalesFeePreview(
+      requestType: $requestType
+      returnQuantity: $returnQuantity
+    ) {
+      requestType
+      returnQuantity
+      eligiblePreviousQuantity
+      freeRemainingQuantity
+      chargeableQuantity
+      returnFeeInr
+    }
+  }
+`;
+
+export const eligibleProductFaultReturnQuantityQuery = gql`
+  query EligibleProductFaultReturnQuantity {
+    eligibleProductFaultReturnQuantity {
+      eligibleQuantity
     }
   }
 `;

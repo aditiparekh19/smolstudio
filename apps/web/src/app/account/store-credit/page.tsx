@@ -90,9 +90,9 @@ export default function StoreCreditPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-5 py-16">
-      <p className="text-xs uppercase tracking-[0.2em] text-[#8b7a70]">
-        Account
-      </p>
+      <Link href="/account" className="text-sm text-[#8b7a70]">
+        ← Account
+      </Link>
 
       <h1 className="mt-2 font-serif text-5xl text-[#5e473c]">Store credit</h1>
 

@@ -93,7 +93,7 @@ export async function listAdminProducts(search?: string, active?: boolean) {
         WHERE wi.product_id = p.id
       ) AS wishlistCount,
 
-      (
+            (
         SELECT COUNT(*)
         FROM return_requests rr
         INNER JOIN order_items oi
@@ -113,6 +113,7 @@ export async function listAdminProducts(search?: string, active?: boolean) {
           ON rv.id = oi.variant_id
         WHERE rv.product_id = p.id
           AND rr.request_type = 'PRODUCT_FAULT'
+          AND rr.status = 'COMPLETED'
       ) AS complaintCount
 
     FROM products p

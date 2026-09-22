@@ -9,7 +9,7 @@ import {
 } from "../../../lib/admin";
 import { useAuth } from "../../../components/AuthProvider";
 
-type SortBy = "newest" | "liked" | "wishlist" | "sizeReplacement" | "complaints";
+type SortBy = "newest" | "liked" | "wishlist" | "complaints";
 
 type Row = {
   id: string;
@@ -75,9 +75,6 @@ export default function AdminProductsPage() {
 
       case "wishlist":
         return result.sort((a, b) => b.wishlistCount - a.wishlistCount);
-
-      case "sizeReplacement":
-        return result.sort((a, b) => b.sizeReplacementCount - a.sizeReplacementCount);
 
       case "complaints":
         return result.sort((a, b) => b.complaintCount - a.complaintCount);
@@ -164,7 +161,6 @@ export default function AdminProductsPage() {
           <option value="newest">Newest</option>
           <option value="liked">Most liked</option>
           <option value="wishlist">Most wishlisted</option>
-          <option value="sizeReplacement">Most size replacements</option>
           <option value="complaints">Most complained</option>
         </select>
       </div>
@@ -221,16 +217,10 @@ export default function AdminProductsPage() {
                 </div>
 
                 {/* Customer activity */}
-                <div className="grid min-w-70 grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="ml-auto grid min-w-[320px] grid-cols-3 gap-2">
                   <Metric label="Liked" value={p.likedCount} icon="♥" />
 
                   <Metric label="Wishlisted" value={p.wishlistCount} icon="♡" />
-
-                  <Metric
-                    label="Size Replacements"
-                    value={p.sizeReplacementCount}
-                    icon="↩"
-                  />
 
                   <Metric
                     label="Complaints"
