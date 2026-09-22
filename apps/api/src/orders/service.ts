@@ -1961,29 +1961,48 @@ async function finalizePaidOrder(orderId: string, paymentId: string) {
 
       const c = coupon.recordset[0];
 
-      const update = await new sql.Request(tx)
-        .input("id", c.id)
-        .input("max", c.maxRedemptions)
-        .query(
+      const existingRedemption = await new sql.Request(tx)
+        .input("couponId", c.id)
+        .input("customerId", row.customerId)
+        .query<any>(
           `
-            UPDATE dbo.coupons
-            SET
-              redeemed_count =
-                redeemed_count + 1
-            WHERE id = @id
-              AND (
-                @max IS NULL
-                OR @max <= 0
-                OR redeemed_count <
-                   @max
-              )
-            `,
+      SELECT TOP 1
+        id,
+        order_id AS orderId
+      FROM dbo.coupon_redemptions WITH (UPDLOCK, HOLDLOCK)
+      WHERE coupon_id = @couponId
+        AND customer_id = @customerId
+    `,
         );
 
-      if (!update.rowsAffected[0]) {
-        throw new Error(
-          "Coupon redemption limit was reached while payment was completing.",
-        );
+      const existing = existingRedemption.recordset[0];
+
+      if (existing) {
+        if (String(existing.orderId) !== String(orderId)) {
+          throw new Error("This coupon has already been used.");
+        }
+      } else {
+        const update = await new sql.Request(tx)
+          .input("id", c.id)
+          .input("max", c.maxRedemptions)
+          .query(
+            `
+        UPDATE dbo.coupons
+        SET redeemed_count = redeemed_count + 1
+        WHERE id = @id
+          AND (
+            @max IS NULL
+            OR @max <= 0
+            OR redeemed_count < @max
+          )
+      `,
+          );
+
+        if (!update.rowsAffected[0]) {
+          throw new Error(
+            "Coupon redemption limit was reached while payment was completing.",
+          );
+        }
       }
 
       const discount = await new sql.Request(tx)

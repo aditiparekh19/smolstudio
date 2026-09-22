@@ -271,7 +271,6 @@ export default function ProductEditor({ id }: { id?: string }) {
     }
   }
   async function removeVariant(v: Variant) {
-    if (!confirm(`Delete ${v.sku}?`)) return;
     try {
       const r = await apiClient().request<{ deleteAdminVariant: Product }>(
         adminDeleteVariantMutation,

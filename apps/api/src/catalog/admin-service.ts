@@ -335,20 +335,76 @@ export async function saveAdminProduct(input: {
   categoryId: string;
   isActive: boolean;
 }) {
-  if (!input.name.trim() || !input.sku.trim() || !input.categoryId)
+  if (!input.name.trim() || !input.sku.trim() || !input.categoryId) {
     throw new Error("Name, SKU and category are required.");
-  if (!Number.isFinite(input.priceInr) || input.priceInr < 0)
+  }
+
+  if (!Number.isFinite(input.priceInr) || input.priceInr < 0) {
     throw new Error("Price must be a non-negative number.");
+  }
+
   if (
     input.compareAtPriceInr != null &&
     (!Number.isFinite(input.compareAtPriceInr) || input.compareAtPriceInr < 0)
-  )
+  ) {
     throw new Error("Compare-at price must be non-negative.");
+  }
+
   const pool = await getDb();
+
+  const sku = input.sku.trim();
+
   const slug = slugify(input.slug || input.name);
-  if (!slug) throw new Error("A valid slug is required.");
+
+  if (!slug) {
+    throw new Error("A valid slug is required.");
+  }
+
+  /*
+   * Check SKU before INSERT/UPDATE.
+   *
+   * When editing a product, its own existing SKU is allowed.
+   * A SKU belonging to another product is rejected.
+   */
+  const duplicateSku = await pool
+    .request()
+    .input("sku", sku)
+    .input("id", input.id ?? null)
+    .query<{ id: string; name: string }>(
+      `
+        SELECT TOP 1
+          id,
+          name
+        FROM products
+        WHERE sku = @sku
+          AND (@id IS NULL OR id <> @id)
+      `,
+    );
+
+  if (duplicateSku.recordset.length > 0) {
+    throw new Error(
+      `SKU "${sku}" is already used by another product. Please enter a different SKU.`,
+    );
+  }
+
   const id = input.id || randomUUID();
+
   if (input.id) {
+    const existingProduct = await pool
+      .request()
+      .input("id", id)
+      .query(
+        `
+          SELECT id
+          FROM products
+          WHERE id=@id
+        `,
+      );
+
+    if (!existingProduct.recordset.length) {
+      throw new Error("Product not found.");
+    }
+
     await pool
       .request()
       .input("id", id)
@@ -357,10 +413,22 @@ export async function saveAdminProduct(input: {
       .input("description", input.description?.trim() || null)
       .input("price", input.priceInr)
       .input("compareAt", input.compareAtPriceInr ?? null)
-      .input("sku", input.sku.trim())
+      .input("sku", sku)
       .input("categoryId", input.categoryId)
       .input("active", input.isActive ? 1 : 0).query(`
-      UPDATE products SET slug=@slug,name=@name,description=@description,price_inr=@price,compare_at_price_inr=@compareAt,sku=@sku,category_id=@categoryId,is_active=@active,updated_at=SYSUTCDATETIME() WHERE id=@id;`);
+        UPDATE products
+        SET
+          slug=@slug,
+          name=@name,
+          description=@description,
+          price_inr=@price,
+          compare_at_price_inr=@compareAt,
+          sku=@sku,
+          category_id=@categoryId,
+          is_active=@active,
+          updated_at=SYSUTCDATETIME()
+        WHERE id=@id;
+      `);
   } else {
     await pool
       .request()
@@ -370,11 +438,34 @@ export async function saveAdminProduct(input: {
       .input("description", input.description?.trim() || null)
       .input("price", input.priceInr)
       .input("compareAt", input.compareAtPriceInr ?? null)
-      .input("sku", input.sku.trim())
+      .input("sku", sku)
       .input("categoryId", input.categoryId)
       .input("active", input.isActive ? 1 : 0).query(`
-      INSERT INTO products(id,category_id,slug,sku,name,description,price_inr,compare_at_price_inr,is_active) VALUES(@id,@categoryId,@slug,@sku,@name,@description,@price,@compareAt,@active);`);
+        INSERT INTO products(
+          id,
+          category_id,
+          slug,
+          sku,
+          name,
+          description,
+          price_inr,
+          compare_at_price_inr,
+          is_active
+        )
+        VALUES(
+          @id,
+          @categoryId,
+          @slug,
+          @sku,
+          @name,
+          @description,
+          @price,
+          @compareAt,
+          @active
+        );
+      `);
   }
+
   return getAdminProduct(id);
 }
 
@@ -455,20 +546,56 @@ export async function saveVariant(input: {
 
 export async function deleteVariant(id: string) {
   const pool = await getDb();
+
   const result = await pool
     .request()
     .input("id", id)
     .query<{ productId: string }>(
-      `SELECT product_id productId FROM product_variants WHERE id=@id`,
+      `SELECT product_id AS productId
+       FROM product_variants
+       WHERE id=@id`,
     );
+
   const productId = result.recordset[0]?.productId;
-  if (!productId) throw new Error("Variant not found.");
-  await pool
+
+  if (!productId) {
+    throw new Error("Variant not found.");
+  }
+
+  // A variant already used in an order must not be physically deleted.
+  const orderRefs = await pool
     .request()
     .input("id", id)
-    .query(
-      `DELETE FROM inventory WHERE variant_id=@id; DELETE FROM cart_items WHERE variant_id=@id; DELETE FROM product_variants WHERE id=@id;`,
+    .query<{ count: number }>(
+      `SELECT COUNT(*) AS count
+       FROM order_items
+       WHERE variant_id=@id`,
     );
+
+  if (Number(orderRefs.recordset[0]?.count ?? 0) > 0) {
+    throw new Error(
+      "This variant has already been used in an order and cannot be deleted.",
+    );
+  }
+
+  await pool.request().input("id", id).query(`
+      BEGIN TRANSACTION;
+
+      DELETE FROM inventory_reservations
+      WHERE variant_id=@id;
+
+      DELETE FROM inventory
+      WHERE variant_id=@id;
+
+      DELETE FROM cart_items
+      WHERE variant_id=@id;
+
+      DELETE FROM product_variants
+      WHERE id=@id;
+
+      COMMIT TRANSACTION;
+    `);
+
   return getAdminProduct(productId);
 }
 
